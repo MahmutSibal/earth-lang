@@ -55,6 +55,7 @@ pub enum Keyword {
     Try,
     Catch,
     Throw,
+    Import,
 }
 
 /// Turkish also accepts ASCII-only spellings for keyboards without Turkish
@@ -79,6 +80,7 @@ const KEYWORDS: &[(Keyword, Spellings)] = &[
     (Keyword::Try, [&["dene"], &["try"]]),
     (Keyword::Catch, [&["yakala"], &["catch"]]),
     (Keyword::Throw, [&["fırlat", "firlat"], &["throw"]]),
+    (Keyword::Import, [&["içe_aktar", "ice_aktar"], &["import"]]),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

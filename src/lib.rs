@@ -401,4 +401,80 @@ fonksiyon ilk_çift(liste) {
 yaz(ilk_çift([1, 3, 4, 5]))";
         assert_eq!(run(source).unwrap(), "4\n");
     }
+
+    fn run_in(directory: &std::path::Path, source: &str) -> Result<String, Error> {
+        let mut output = Vec::new();
+        let mut input = std::io::empty();
+        let program = super::parse(source)?;
+        let mut interpreter = super::Interpreter::new(&mut output, &mut input, Lang::Tr);
+        interpreter.set_base_dir(directory);
+        interpreter.run(&program)?;
+        drop(interpreter);
+        Ok(String::from_utf8(output).unwrap())
+    }
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let directory =
+            std::env::temp_dir().join(format!("earth-test-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(directory.join("alt")).unwrap();
+        directory
+    }
+
+    #[test]
+    fn imports_modules_once_relative_to_the_importer() {
+        let directory = temp_dir("import");
+        std::fs::write(
+            directory.join("geometri.earth"),
+            "içe_aktar \"alt/sabitler.earth\"\nyaz(\"geometri yüklendi\")\nfonksiyon alan(r) { döndür PI * r * r }",
+        )
+        .unwrap();
+        std::fs::write(directory.join("alt/sabitler.earth"), "değişken PI = 3").unwrap();
+
+        let output = run_in(
+            &directory,
+            "içe_aktar \"geometri.earth\"\niçe_aktar \"geometri.earth\"\nyaz(alan(2), PI)",
+        )
+        .unwrap();
+        assert_eq!(output, "geometri yüklendi\n12 3\n");
+        // A module cannot see the importer's variables.
+        std::fs::write(directory.join("alt/gizli.earth"), "yaz(gizli)").unwrap();
+        let error = run_in(
+            &directory,
+            "değişken gizli = 1\niçe_aktar \"alt/gizli.earth\"",
+        )
+        .unwrap_err();
+        assert!(error
+            .text(Lang::Tr)
+            .starts_with("Tanımsız değişken 'gizli'"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn reports_import_errors_in_the_module_file() {
+        let directory = temp_dir("import-errors");
+        std::fs::write(directory.join("a.earth"), "içe_aktar \"b.earth\"").unwrap();
+        std::fs::write(directory.join("b.earth"), "içe_aktar \"a.earth\"").unwrap();
+        std::fs::write(
+            directory.join("bozuk.earth"),
+            "fonksiyon f() {\n  döndür 1 / 0\n}",
+        )
+        .unwrap();
+
+        let error = run_in(&directory, "içe_aktar \"a.earth\"").unwrap_err();
+        assert_eq!(
+            error.text(Lang::Tr),
+            "'a.earth' kendini dolaylı olarak içe aktarıyor (döngüsel içe aktarma)"
+        );
+        assert_eq!(error.file, Some(directory.join("b.earth")));
+
+        let error = run_in(&directory, "içe_aktar \"bozuk.earth\"\nf()").unwrap_err();
+        assert_eq!(error.file, Some(directory.join("bozuk.earth")));
+        assert_eq!(error.position, Some(Position::new(2, 12)));
+
+        let error = run_in(&directory, "içe_aktar \"yok.earth\"").unwrap_err();
+        assert!(error
+            .text(Lang::Tr)
+            .starts_with("'yok.earth' içe aktarılamadı"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 }

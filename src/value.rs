@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
+use std::path::Path;
 use std::rc::Rc;
 
 use crate::ast::FunctionDecl;
@@ -23,6 +24,8 @@ pub enum Value {
 pub struct Function {
     pub decl: Rc<FunctionDecl>,
     pub closure: Env,
+    /// The imported file the function was defined in, for error reports.
+    pub file: Option<Rc<Path>>,
 }
 
 impl Value {
@@ -263,6 +266,11 @@ impl Scope {
             Some(value) => Some(value.clone()),
             None => self.parent.as_ref()?.borrow().get(name),
         }
+    }
+
+    /// The variables defined directly in this scope, not in its parents.
+    pub fn own_values(&self) -> impl Iterator<Item = (&String, &Value)> {
+        self.values.iter()
     }
 
     /// Updates an existing variable; returns `false` if it was never defined.

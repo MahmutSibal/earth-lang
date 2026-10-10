@@ -74,6 +74,7 @@ pub enum Expected {
     FunctionName,
     ParameterName,
     LoopVariable,
+    FilePath,
 }
 
 impl Expected {
@@ -84,10 +85,12 @@ impl Expected {
             (Lang::Tr, Expected::FunctionName) => "fonksiyon adı".to_owned(),
             (Lang::Tr, Expected::ParameterName) => "parametre adı".to_owned(),
             (Lang::Tr, Expected::LoopVariable) => "döngü değişkeni".to_owned(),
+            (Lang::Tr, Expected::FilePath) => "tırnak içinde dosya yolu".to_owned(),
             (Lang::En, Expected::VariableName) => "a variable name".to_owned(),
             (Lang::En, Expected::FunctionName) => "a function name".to_owned(),
             (Lang::En, Expected::ParameterName) => "a parameter name".to_owned(),
             (Lang::En, Expected::LoopVariable) => "a loop variable".to_owned(),
+            (Lang::En, Expected::FilePath) => "a quoted file path".to_owned(),
         }
     }
 }
@@ -173,6 +176,11 @@ pub enum Message {
     Io(String),
     /// A value thrown with `fırlat` that nothing caught.
     Thrown(Value),
+    ImportFailed {
+        path: String,
+        error: String,
+    },
+    ImportCycle(String),
 }
 
 impl Message {
@@ -299,6 +307,10 @@ impl Message {
             ),
             Message::Io(error) => format!("G/Ç hatası: {error}"),
             Message::Thrown(value) => format!("Yakalanmamış hata: {}", value.display(lang)),
+            Message::ImportFailed { path, error } => format!("'{path}' içe aktarılamadı: {error}"),
+            Message::ImportCycle(path) => {
+                format!("'{path}' kendini dolaylı olarak içe aktarıyor (döngüsel içe aktarma)")
+            }
         }
     }
 
@@ -423,6 +435,8 @@ impl Message {
             ),
             Message::Io(error) => format!("I/O error: {error}"),
             Message::Thrown(value) => format!("Uncaught error: {}", value.display(lang)),
+            Message::ImportFailed { path, error } => format!("Could not import '{path}': {error}"),
+            Message::ImportCycle(path) => format!("'{path}' imports itself (circular import)"),
         }
     }
 }

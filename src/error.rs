@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 use crate::keywords::Lang;
 use crate::messages::Message;
@@ -26,6 +27,8 @@ impl fmt::Display for Position {
 pub struct Error {
     pub message: Message,
     pub position: Option<Position>,
+    /// The imported file the error happened in; `None` for the main program.
+    pub file: Option<PathBuf>,
 }
 
 impl Error {
@@ -33,7 +36,15 @@ impl Error {
         Self {
             message,
             position: Some(position),
+            file: None,
         }
+    }
+
+    /// Records that the error happened in `file`, unless a more deeply
+    /// imported file was already recorded.
+    pub fn in_file(mut self, file: &Path) -> Self {
+        self.file.get_or_insert_with(|| file.to_path_buf());
+        self
     }
 
     /// The message alone, in `lang`.

@@ -1,4 +1,5 @@
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 use std::{env, fs, process, thread};
 
 use earth::messages::cli;
@@ -124,11 +125,17 @@ fn run_file(path: &str, lang: Option<Lang>) -> i32 {
     };
     let lang = lang.unwrap_or_else(|| earth::detect_language(&source));
 
-    let stdout = io::stdout();
-    let stdin = io::stdin();
-    let result = earth::run_with_io(&source, &mut stdout.lock(), &mut stdin.lock(), lang);
+    let mut stdout = io::stdout().lock();
+    let mut stdin = io::stdin().lock();
+    let result = earth::parse(&source).and_then(|program| {
+        let mut interpreter = Interpreter::new(&mut stdout, &mut stdin, lang);
+        if let Some(directory) = Path::new(path).parent() {
+            interpreter.set_base_dir(directory);
+        }
+        interpreter.run(&program)
+    });
     match result {
-        Ok(()) => 0,
+        Ok(_) => 0,
         Err(error) => {
             report(path, &source, &error, lang);
             1
@@ -137,7 +144,21 @@ fn run_file(path: &str, lang: Option<Lang>) -> i32 {
 }
 
 /// Prints an error with the offending source line and a caret under it.
+/// Errors inside an imported module point into that module's file.
 fn report(path: &str, source: &str, error: &Error, lang: Lang) {
+    if let Some(file) = &error.file {
+        let module_source = fs::read_to_string(file).unwrap_or_default();
+        let module_error = Error {
+            file: None,
+            ..error.clone()
+        };
+        return report(
+            &file.display().to_string(),
+            &module_source,
+            &module_error,
+            lang,
+        );
+    }
     let prefix = cli::error_prefix(lang);
     let Some(position) = error.position else {
         eprintln!("{prefix}: {}", error.text(lang));

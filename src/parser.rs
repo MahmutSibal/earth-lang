@@ -45,6 +45,22 @@ impl Parser<'_> {
             TokenKind::Keyword(Keyword::For) => self.for_statement(token.position),
             TokenKind::Keyword(Keyword::Function) => self.function_statement(),
             TokenKind::Keyword(Keyword::Try) => self.try_statement(),
+            TokenKind::Keyword(Keyword::Import) => {
+                let path_token = self.advance().clone();
+                match path_token.kind {
+                    TokenKind::String(path) => Ok(Stmt::Import {
+                        path,
+                        position: token.position,
+                    }),
+                    other => Err(Error::at(
+                        path_token.position,
+                        Message::Expected {
+                            expected: Expected::FilePath,
+                            found: other.found(),
+                        },
+                    )),
+                }
+            }
             TokenKind::Keyword(Keyword::Throw) => Ok(Stmt::Throw {
                 value: self.expression()?,
                 position: token.position,

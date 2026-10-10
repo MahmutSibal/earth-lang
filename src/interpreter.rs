@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+use std::fs;
 use std::io::{BufRead, Write};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::ast::{BinaryOp, Expr, LogicalOp, Program, Stmt, UnaryOp};
@@ -25,27 +28,53 @@ enum Flow {
 ///
 /// [`run`]: Interpreter::run
 pub struct Interpreter<'io> {
+    /// Only the built-in functions; every module starts from here.
+    builtins: Env,
     globals: Env,
     output: &'io mut dyn Write,
     input: &'io mut dyn BufRead,
     depth: usize,
     /// The language values are printed in: `doğru` or `true`.
     lang: Lang,
+    /// The directory `içe_aktar` paths in the main program are relative to.
+    base_dir: PathBuf,
+    /// Modules being loaded, innermost last, to resolve relative paths and
+    /// detect circular imports.
+    loading: Vec<Module>,
+    /// The definitions of every module loaded so far, by canonical path.
+    modules: HashMap<PathBuf, Vec<(String, Value)>>,
+}
+
+struct Module {
+    path: Rc<Path>,
+    key: PathBuf,
 }
 
 impl<'io> Interpreter<'io> {
     pub fn new(output: &'io mut dyn Write, input: &'io mut dyn BufRead, lang: Lang) -> Self {
-        let globals = Env::default();
+        let builtin_scope = Env::default();
         for (name, builtin) in builtins() {
-            globals.borrow_mut().define(name, Value::Builtin(builtin));
+            builtin_scope
+                .borrow_mut()
+                .define(name, Value::Builtin(builtin));
         }
         Self {
-            globals,
+            globals: Scope::new_child(&builtin_scope),
+            builtins: builtin_scope,
             output,
             input,
             depth: 0,
             lang,
+            base_dir: PathBuf::new(),
+            loading: Vec::new(),
+            modules: HashMap::new(),
         }
+    }
+
+    /// Sets the directory that `içe_aktar` paths are relative to; usually
+    /// the directory of the main program.
+    pub fn set_base_dir(&mut self, directory: impl Into<PathBuf>) {
+        self.base_dir = directory.into();
     }
 
     pub fn lang(&self) -> Lang {
@@ -184,6 +213,7 @@ impl<'io> Interpreter<'io> {
                 let function = Function {
                     decl: Rc::clone(decl),
                     closure: Rc::clone(env),
+                    file: self.loading.last().map(|module| Rc::clone(&module.path)),
                 };
                 env.borrow_mut()
                     .define(decl.name.clone(), Value::Function(Rc::new(function)));
@@ -219,6 +249,11 @@ impl<'io> Interpreter<'io> {
             Stmt::Throw { value, position } => {
                 let value = self.evaluate(value, env)?;
                 return Err(Error::at(*position, Message::Thrown(value)));
+            }
+            Stmt::Import { path, position } => {
+                for (name, value) in self.import(path, *position)? {
+                    env.borrow_mut().define(name, value);
+                }
             }
             Stmt::Break => return Ok(Flow::Break),
             Stmt::Continue => return Ok(Flow::Continue),
@@ -339,6 +374,52 @@ impl<'io> Interpreter<'io> {
         }
     }
 
+    /// Loads a module once and returns its top-level definitions.
+    fn import(&mut self, path: &str, position: Position) -> Result<Vec<(String, Value)>, Error> {
+        let directory = match self.loading.last() {
+            Some(module) => module.path.parent().unwrap_or(Path::new("")).to_path_buf(),
+            None => self.base_dir.clone(),
+        };
+        let full_path = directory.join(path);
+        let source = fs::read_to_string(&full_path).map_err(|error| {
+            Error::at(
+                position,
+                Message::ImportFailed {
+                    path: path.to_owned(),
+                    error: error.to_string(),
+                },
+            )
+        })?;
+        let key = full_path
+            .canonicalize()
+            .unwrap_or_else(|_| full_path.clone());
+        if let Some(definitions) = self.modules.get(&key) {
+            return Ok(definitions.clone());
+        }
+        if self.loading.iter().any(|module| module.key == key) {
+            return Err(Error::at(position, Message::ImportCycle(path.to_owned())));
+        }
+
+        let module_path: Rc<Path> = Rc::from(full_path.as_path());
+        let program = crate::parse(&source).map_err(|error| error.in_file(&module_path))?;
+        let scope = Scope::new_child(&self.builtins);
+        self.loading.push(Module {
+            path: Rc::clone(&module_path),
+            key: key.clone(),
+        });
+        let result = self.execute_block(&program.statements, &scope);
+        self.loading.pop();
+        result.map_err(|error| error.in_file(&module_path))?;
+
+        let definitions: Vec<(String, Value)> = scope
+            .borrow()
+            .own_values()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+        self.modules.insert(key, definitions.clone());
+        Ok(definitions)
+    }
+
     fn call(
         &mut self,
         callee: Value,
@@ -381,6 +462,10 @@ impl<'io> Interpreter<'io> {
         let result = self.execute_block(&decl.body, &scope);
         self.depth -= 1;
 
+        let result = match &function.file {
+            Some(file) => result.map_err(|error| error.in_file(file)),
+            None => result,
+        };
         match result? {
             Flow::Return(value) => Ok(value),
             _ => Ok(Value::Nil),

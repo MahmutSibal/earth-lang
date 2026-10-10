@@ -122,6 +122,10 @@ pub enum Stmt {
         value: Expr,
         position: Position,
     },
+    Import {
+        path: String,
+        position: Position,
+    },
     Break,
     Continue,
 }
