@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="Earth" width="320">
+</p>
+
 # Earth — Kendi Dünyan, Kendi Kodlaman
 
 Earth, anahtar kelimeleri birden fazla insan dilinde yazılabilen küçük bir

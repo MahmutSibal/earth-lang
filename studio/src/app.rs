@@ -89,6 +89,7 @@ pub struct StudioApp {
     confirm: Option<Confirm>,
     allow_close: bool,
     cursor: (usize, usize),
+    logo: Option<egui::TextureHandle>,
 }
 
 impl StudioApp {
@@ -114,6 +115,7 @@ impl StudioApp {
             confirm: None,
             allow_close: false,
             cursor: (1, 1),
+            logo: load_logo(&context.egui_ctx),
         };
 
         // `earth-studio program.earth` may give a relative path.
@@ -415,7 +417,10 @@ impl StudioApp {
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         let texts = self.texts();
         ui.horizontal(|ui| {
-            ui.label(RichText::new("🌍 Earth Studio").strong().size(16.0));
+            if let Some(logo) = &self.logo {
+                ui.add(egui::Image::new(logo).fit_to_exact_size(egui::vec2(24.0, 24.0)));
+            }
+            ui.label(RichText::new("Earth Studio").strong().size(16.0));
             ui.separator();
             if ui.button(texts.open_folder).clicked() {
                 if let Some(folder) = rfd::FileDialog::new().pick_folder() {
@@ -835,6 +840,17 @@ impl eframe::App for StudioApp {
 
         self.dialogs(&context);
     }
+}
+
+/// The Earth logo for the toolbar, decoded with the same PNG reader that
+/// provides the window icon.
+fn load_logo(context: &egui::Context) -> Option<egui::TextureHandle> {
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../../windows/earth.png")).ok()?;
+    let image = egui::ColorImage::from_rgba_unmultiplied(
+        [icon.width as usize, icon.height as usize],
+        &icon.rgba,
+    );
+    Some(context.load_texture("earth-logo", image, egui::TextureOptions::LINEAR))
 }
 
 fn show_nodes(
