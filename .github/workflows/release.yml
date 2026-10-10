@@ -1,0 +1,85 @@
+name: Release
+
+# Pushing a tag such as v0.3.0 builds Earth for Windows, Linux and macOS and
+# publishes the archives, with their SHA-256 checksums, as a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: earth-windows-x64.zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: earth-linux-x64.tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: earth-macos-arm64.tar.gz
+    runs-on: ${{ matrix.os }}
+    env:
+      # Signing runs only once the secrets described in docs/imzalama.md exist.
+      CAN_SIGN: ${{ secrets.AZURE_CLIENT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo test
+      - run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Sign earth.exe
+        if: runner.os == 'Windows' && env.CAN_SIGN == 'true'
+        uses: azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          files-folder: target/${{ matrix.target }}/release
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p earth/ornekler
+          cp examples/*.earth earth/ornekler/
+          cp README.md LICENSE earth/
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/${{ matrix.target }}/release/earth.exe earth/
+            7z a ${{ matrix.archive }} earth
+          else
+            cp target/${{ matrix.target }}/release/earth earth/
+            tar czf ${{ matrix.archive }} earth
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Checksums
+        run: sha256sum earth-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            earth-*
+            SHA256SUMS.txt

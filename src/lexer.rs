@@ -1,5 +1,7 @@
 use crate::error::{Error, Position};
-use crate::keywords::{keyword, Keyword};
+use crate::keywords::{keyword, language_of, Keyword, Lang};
+use crate::messages::{Found, Message};
+use crate::value::format_number;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
@@ -14,6 +16,7 @@ pub enum TokenKind {
     LeftBracket,
     RightBracket,
     Comma,
+    Colon,
     Semicolon,
     Plus,
     Minus,
@@ -33,35 +36,37 @@ pub enum TokenKind {
 
 impl TokenKind {
     /// How the token is shown to the user in error messages.
-    pub fn describe(&self) -> String {
-        match self {
-            TokenKind::Identifier(name) => format!("'{name}'"),
-            TokenKind::Keyword(keyword) => format!("'{}'", keyword.name()),
-            TokenKind::Number(value) => format!("'{value}'"),
-            TokenKind::String(_) => "metin".to_owned(),
-            TokenKind::LeftParen => "'('".to_owned(),
-            TokenKind::RightParen => "')'".to_owned(),
-            TokenKind::LeftBrace => "'{'".to_owned(),
-            TokenKind::RightBrace => "'}'".to_owned(),
-            TokenKind::LeftBracket => "'['".to_owned(),
-            TokenKind::RightBracket => "']'".to_owned(),
-            TokenKind::Comma => "','".to_owned(),
-            TokenKind::Semicolon => "';'".to_owned(),
-            TokenKind::Plus => "'+'".to_owned(),
-            TokenKind::Minus => "'-'".to_owned(),
-            TokenKind::Star => "'*'".to_owned(),
-            TokenKind::Slash => "'/'".to_owned(),
-            TokenKind::Percent => "'%'".to_owned(),
-            TokenKind::Equal => "'='".to_owned(),
-            TokenKind::EqualEqual => "'=='".to_owned(),
-            TokenKind::BangEqual => "'!='".to_owned(),
-            TokenKind::Less => "'<'".to_owned(),
-            TokenKind::LessEqual => "'<='".to_owned(),
-            TokenKind::Greater => "'>'".to_owned(),
-            TokenKind::GreaterEqual => "'>='".to_owned(),
-            TokenKind::Newline => "satır sonu".to_owned(),
-            TokenKind::Eof => "dosya sonu".to_owned(),
-        }
+    pub fn found(&self) -> Found {
+        let symbol = match self {
+            TokenKind::Identifier(name) => return Found::Token(name.clone()),
+            TokenKind::Keyword(keyword) => return Found::Keyword(*keyword),
+            TokenKind::Number(value) => return Found::Token(format_number(*value)),
+            TokenKind::String(_) => return Found::Text,
+            TokenKind::Newline => return Found::Newline,
+            TokenKind::Eof => return Found::Eof,
+            TokenKind::LeftParen => "(",
+            TokenKind::RightParen => ")",
+            TokenKind::LeftBrace => "{",
+            TokenKind::RightBrace => "}",
+            TokenKind::LeftBracket => "[",
+            TokenKind::RightBracket => "]",
+            TokenKind::Comma => ",",
+            TokenKind::Colon => ":",
+            TokenKind::Semicolon => ";",
+            TokenKind::Plus => "+",
+            TokenKind::Minus => "-",
+            TokenKind::Star => "*",
+            TokenKind::Slash => "/",
+            TokenKind::Percent => "%",
+            TokenKind::Equal => "=",
+            TokenKind::EqualEqual => "==",
+            TokenKind::BangEqual => "!=",
+            TokenKind::Less => "<",
+            TokenKind::LessEqual => "<=",
+            TokenKind::Greater => ">",
+            TokenKind::GreaterEqual => ">=",
+        };
+        Found::Token(symbol.to_owned())
     }
 }
 
@@ -69,6 +74,8 @@ impl TokenKind {
 pub struct Token {
     pub kind: TokenKind,
     pub position: Position,
+    /// The human language of the word, for keywords and built-in names.
+    pub lang: Option<Lang>,
 }
 
 /// Converts source text into tokens. The result always ends with `Eof`.
@@ -125,11 +132,16 @@ impl Lexer {
                 }
                 letter if letter.is_alphabetic() || letter == '_' => {
                     let word = self.read_word();
+                    let lang = language_of(&word);
                     let kind = match keyword(&word) {
                         Some(keyword) => TokenKind::Keyword(keyword),
                         None => TokenKind::Identifier(word),
                     };
-                    self.push(kind, start);
+                    self.tokens.push(Token {
+                        kind,
+                        position: start,
+                        lang,
+                    });
                 }
                 _ => {
                     self.advance();
@@ -165,6 +177,7 @@ impl Lexer {
             '{' => TokenKind::LeftBrace,
             '}' => TokenKind::RightBrace,
             ',' => TokenKind::Comma,
+            ':' => TokenKind::Colon,
             ';' => TokenKind::Semicolon,
             '+' => TokenKind::Plus,
             '-' => TokenKind::Minus,
@@ -178,7 +191,7 @@ impl Lexer {
             '<' => TokenKind::Less,
             '>' if self.eat('=') => TokenKind::GreaterEqual,
             '>' => TokenKind::Greater,
-            other => return Err(Error::at(start, format!("Beklenmeyen karakter '{other}'"))),
+            other => return Err(Error::at(start, Message::UnexpectedCharacter(other))),
         };
         Ok(kind)
     }
@@ -200,10 +213,7 @@ impl Lexer {
                         Some('r') => value.push('\r'),
                         Some('t') => value.push('\t'),
                         Some(other) => {
-                            return Err(Error::at(
-                                escape_position,
-                                format!("Geçersiz kaçış dizisi '\\{other}'"),
-                            ))
+                            return Err(Error::at(escape_position, Message::InvalidEscape(other)))
                         }
                         None => break,
                     }
@@ -212,7 +222,7 @@ impl Lexer {
             }
         }
 
-        Err(Error::at(start, "Kapatılmamış metin"))
+        Err(Error::at(start, Message::UnterminatedString))
     }
 
     fn read_number(&mut self) -> Result<f64, Error> {
@@ -228,7 +238,7 @@ impl Lexer {
             }
         }
         text.parse()
-            .map_err(|_| Error::at(start, format!("Geçersiz sayı '{text}'")))
+            .map_err(|_| Error::at(start, Message::InvalidNumber(text.clone())))
     }
 
     fn read_word(&mut self) -> String {
@@ -245,7 +255,11 @@ impl Lexer {
     }
 
     fn push(&mut self, kind: TokenKind, position: Position) {
-        self.tokens.push(Token { kind, position });
+        self.tokens.push(Token {
+            kind,
+            position,
+            lang: None,
+        });
     }
 
     fn position(&self) -> Position {
@@ -282,11 +296,25 @@ impl Lexer {
     }
 }
 
+/// The language most of a program's keywords and built-ins are written in.
+/// Ties, and programs without any, count as Turkish.
+pub fn detect_language(tokens: &[Token]) -> Lang {
+    let english = tokens.iter().filter(|t| t.lang == Some(Lang::En)).count();
+    let turkish = tokens.iter().filter(|t| t.lang == Some(Lang::Tr)).count();
+    if english > turkish {
+        Lang::En
+    } else {
+        Lang::Tr
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{lex, TokenKind};
+    use super::{detect_language, lex, TokenKind};
     use crate::error::Position;
     use crate::keywords::Keyword;
+    use crate::keywords::Lang;
+    use crate::messages::Message;
 
     fn kinds(source: &str) -> Vec<TokenKind> {
         lex(source)
@@ -344,6 +372,14 @@ mod tests {
     fn reports_unterminated_strings_with_position() {
         let error = lex("yaz(1)\nprint(\"missing)").unwrap_err();
         assert_eq!(error.position, Some(Position::new(2, 7)));
-        assert_eq!(error.message, "Kapatılmamış metin");
+        assert_eq!(error.message, Message::UnterminatedString);
+    }
+
+    #[test]
+    fn detects_the_program_language() {
+        let detect = |source| detect_language(&lex(source).unwrap());
+        assert_eq!(detect("if true { print(\"eğer\") }"), Lang::En);
+        assert_eq!(detect("eğer doğru { yaz(\"if\") }"), Lang::Tr);
+        assert_eq!(detect("x = 1"), Lang::Tr);
     }
 }

@@ -4,6 +4,7 @@ use crate::ast::{BinaryOp, Expr, FunctionDecl, LogicalOp, Program, Stmt, UnaryOp
 use crate::error::{Error, Position};
 use crate::keywords::Keyword;
 use crate::lexer::{Token, TokenKind};
+use crate::messages::{Expected, Message};
 
 /// Parses a token stream produced by [`crate::lexer::lex`].
 pub fn parse(tokens: &[Token]) -> Result<Program, Error> {
@@ -43,11 +44,32 @@ impl Parser<'_> {
             TokenKind::Keyword(Keyword::While) => self.while_statement(),
             TokenKind::Keyword(Keyword::For) => self.for_statement(token.position),
             TokenKind::Keyword(Keyword::Function) => self.function_statement(),
+            TokenKind::Keyword(Keyword::Try) => self.try_statement(),
+            TokenKind::Keyword(Keyword::Import) => {
+                let path_token = self.advance().clone();
+                match path_token.kind {
+                    TokenKind::String(path) => Ok(Stmt::Import {
+                        path,
+                        position: token.position,
+                    }),
+                    other => Err(Error::at(
+                        path_token.position,
+                        Message::Expected {
+                            expected: Expected::FilePath,
+                            found: other.found(),
+                        },
+                    )),
+                }
+            }
+            TokenKind::Keyword(Keyword::Throw) => Ok(Stmt::Throw {
+                value: self.expression()?,
+                position: token.position,
+            }),
             TokenKind::Keyword(Keyword::Return) => {
                 if self.function_depth == 0 {
                     return Err(Error::at(
                         token.position,
-                        "'döndür' yalnızca bir fonksiyonun içinde kullanılabilir",
+                        Message::OutsideFunction(Keyword::Return),
                     ));
                 }
                 if self.at_statement_end() {
@@ -58,13 +80,7 @@ impl Parser<'_> {
             }
             TokenKind::Keyword(keyword @ (Keyword::Break | Keyword::Continue)) => {
                 if self.loop_depth == 0 {
-                    return Err(Error::at(
-                        token.position,
-                        format!(
-                            "'{}' yalnızca bir döngünün içinde kullanılabilir",
-                            keyword.name()
-                        ),
-                    ));
+                    return Err(Error::at(token.position, Message::OutsideLoop(keyword)));
                 }
                 Ok(if keyword == Keyword::Break {
                     Stmt::Break
@@ -80,8 +96,8 @@ impl Parser<'_> {
     }
 
     fn let_statement(&mut self) -> Result<Stmt, Error> {
-        let name = self.identifier("değişken adı")?;
-        self.expect(TokenKind::Equal, "'='")?;
+        let name = self.identifier(Expected::VariableName)?;
+        self.expect(TokenKind::Equal)?;
         let value = self.expression()?;
         Ok(Stmt::Let { name, value })
     }
@@ -110,6 +126,26 @@ impl Parser<'_> {
         })
     }
 
+    fn try_statement(&mut self) -> Result<Stmt, Error> {
+        let body = self.block()?;
+        self.skip_separators();
+        self.expect(TokenKind::Keyword(Keyword::Catch))?;
+        let variable = match &self.peek().kind {
+            TokenKind::Identifier(name) => {
+                let name = name.clone();
+                self.advance();
+                Some(name)
+            }
+            _ => None,
+        };
+        let handler = self.block()?;
+        Ok(Stmt::Try {
+            body,
+            variable,
+            handler,
+        })
+    }
+
     fn while_statement(&mut self) -> Result<Stmt, Error> {
         let condition = self.expression()?;
         let body = self.loop_body()?;
@@ -117,8 +153,8 @@ impl Parser<'_> {
     }
 
     fn for_statement(&mut self, position: Position) -> Result<Stmt, Error> {
-        let variable = self.identifier("döngü değişkeni")?;
-        self.expect(TokenKind::Keyword(Keyword::In), "'içinde'")?;
+        let variable = self.identifier(Expected::LoopVariable)?;
+        self.expect(TokenKind::Keyword(Keyword::In))?;
         let iterable = self.expression()?;
         let body = self.loop_body()?;
         Ok(Stmt::For {
@@ -137,17 +173,17 @@ impl Parser<'_> {
     }
 
     fn function_statement(&mut self) -> Result<Stmt, Error> {
-        let name = self.identifier("fonksiyon adı")?;
-        self.expect(TokenKind::LeftParen, "'('")?;
+        let name = self.identifier(Expected::FunctionName)?;
+        self.expect(TokenKind::LeftParen)?;
         let mut parameters = Vec::new();
         if !self.check(&TokenKind::RightParen) {
             loop {
                 let parameter_position = self.peek().position;
-                let parameter = self.identifier("parametre adı")?;
+                let parameter = self.identifier(Expected::ParameterName)?;
                 if parameters.contains(&parameter) {
                     return Err(Error::at(
                         parameter_position,
-                        format!("'{parameter}' parametresi iki kez tanımlanmış"),
+                        Message::DuplicateParameter(parameter),
                     ));
                 }
                 parameters.push(parameter);
@@ -156,7 +192,7 @@ impl Parser<'_> {
                 }
             }
         }
-        self.expect(TokenKind::RightParen, "')'")?;
+        self.expect(TokenKind::RightParen)?;
 
         // A function body starts a fresh context: loops outside it do not
         // make `kır` valid inside it.
@@ -192,20 +228,17 @@ impl Parser<'_> {
                 value,
                 position,
             }),
-            _ => Err(Error::at(position, "Bu ifadeye değer atanamaz")),
+            _ => Err(Error::at(position, Message::InvalidAssignmentTarget)),
         }
     }
 
     fn block(&mut self) -> Result<Vec<Stmt>, Error> {
-        self.expect(TokenKind::LeftBrace, "'{'")?;
+        self.expect(TokenKind::LeftBrace)?;
         let mut statements = Vec::new();
         self.skip_separators();
         while !self.check(&TokenKind::RightBrace) {
             if self.check(&TokenKind::Eof) {
-                return Err(Error::at(
-                    self.peek().position,
-                    "Blok kapatılmamış: '}' bekleniyordu",
-                ));
+                return Err(Error::at(self.peek().position, Message::UnclosedBlock));
             }
             statements.push(self.statement()?);
             self.end_statement()?;
@@ -224,7 +257,7 @@ impl Parser<'_> {
         let token = self.peek();
         Err(Error::at(
             token.position,
-            format!("Satır sonu bekleniyordu, {} bulundu", token.kind.describe()),
+            Message::ExpectedStatementEnd(token.kind.found()),
         ))
     }
 
@@ -347,7 +380,7 @@ impl Parser<'_> {
         loop {
             if self.check(&TokenKind::LeftParen) {
                 let position = self.advance().position;
-                let arguments = self.list_items(TokenKind::RightParen, "')'")?;
+                let arguments = self.list_items(TokenKind::RightParen)?;
                 expression = Expr::Call {
                     callee: Box::new(expression),
                     arguments,
@@ -356,7 +389,7 @@ impl Parser<'_> {
             } else if self.check(&TokenKind::LeftBracket) {
                 let position = self.advance().position;
                 let index = self.expression()?;
-                self.expect(TokenKind::RightBracket, "']'")?;
+                self.expect(TokenKind::RightBracket)?;
                 expression = Expr::Index {
                     target: Box::new(expression),
                     index: Box::new(index),
@@ -382,21 +415,49 @@ impl Parser<'_> {
             }),
             TokenKind::LeftParen => {
                 let expression = self.expression()?;
-                self.expect(TokenKind::RightParen, "')'")?;
+                self.expect(TokenKind::RightParen)?;
                 Ok(expression)
             }
-            TokenKind::LeftBracket => {
-                Ok(Expr::List(self.list_items(TokenKind::RightBracket, "']'")?))
-            }
+            TokenKind::LeftBrace => self.dict_literal(),
+            TokenKind::LeftBracket => Ok(Expr::List(self.list_items(TokenKind::RightBracket)?)),
             other => Err(Error::at(
                 token.position,
-                format!("İfade bekleniyordu, {} bulundu", other.describe()),
+                Message::ExpectedExpression(other.found()),
             )),
         }
     }
 
+    /// `{"anahtar": değer, ...}`. Unlike blocks, a dictionary may span
+    /// several lines freely.
+    fn dict_literal(&mut self) -> Result<Expr, Error> {
+        let mut entries = Vec::new();
+        self.skip_newlines();
+        while !self.check(&TokenKind::RightBrace) {
+            let key_position = self.peek().position;
+            let key = self.expression()?;
+            self.skip_newlines();
+            self.expect(TokenKind::Colon)?;
+            self.skip_newlines();
+            let value = self.expression()?;
+            entries.push((key_position, key, value));
+            self.skip_newlines();
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+            self.skip_newlines();
+        }
+        self.expect(TokenKind::RightBrace)?;
+        Ok(Expr::Dict(entries))
+    }
+
+    fn skip_newlines(&mut self) {
+        while self.check(&TokenKind::Newline) {
+            self.advance();
+        }
+    }
+
     /// Comma-separated expressions up to `closing`; a trailing comma is allowed.
-    fn list_items(&mut self, closing: TokenKind, expected: &str) -> Result<Vec<Expr>, Error> {
+    fn list_items(&mut self, closing: TokenKind) -> Result<Vec<Expr>, Error> {
         let mut items = Vec::new();
         while !self.check(&closing) {
             items.push(self.expression()?);
@@ -404,31 +465,37 @@ impl Parser<'_> {
                 break;
             }
         }
-        self.expect(closing, expected)?;
+        self.expect(closing)?;
         Ok(items)
     }
 
     // ----- token helpers -----
 
-    fn identifier(&mut self, what: &str) -> Result<String, Error> {
+    fn identifier(&mut self, expected: Expected) -> Result<String, Error> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Identifier(name) => Ok(name),
             other => Err(Error::at(
                 token.position,
-                format!("{what} bekleniyordu, {} bulundu", other.describe()),
+                Message::Expected {
+                    expected,
+                    found: other.found(),
+                },
             )),
         }
     }
 
-    fn expect(&mut self, kind: TokenKind, expected: &str) -> Result<(), Error> {
+    fn expect(&mut self, kind: TokenKind) -> Result<(), Error> {
         if self.eat(&kind) {
             return Ok(());
         }
         let token = self.peek();
         Err(Error::at(
             token.position,
-            format!("{expected} bekleniyordu, {} bulundu", token.kind.describe()),
+            Message::Expected {
+                expected: Expected::Token(kind.found()),
+                found: token.kind.found(),
+            },
         ))
     }
 
@@ -471,6 +538,7 @@ mod tests {
     use super::parse;
     use crate::ast::{BinaryOp, Expr, Stmt};
     use crate::error::{Error, Position};
+    use crate::keywords::Lang;
     use crate::lexer::lex;
 
     fn parse_source(source: &str) -> Result<Vec<Stmt>, Error> {
@@ -509,20 +577,23 @@ mod tests {
     fn rejects_missing_parenthesis_with_position() {
         let error = parse_source("yaz(\"Merhaba\"\nyaz(1)").unwrap_err();
         assert_eq!(error.position, Some(Position::new(2, 1)));
-        assert_eq!(error.message, "')' bekleniyordu, 'yaz' bulundu");
+        assert_eq!(error.text(Lang::Tr), "')' bekleniyordu, 'yaz' bulundu");
     }
 
     #[test]
     fn rejects_two_statements_on_one_line() {
         let error = parse_source("yaz(1) yaz(2)").unwrap_err();
-        assert_eq!(error.message, "Satır sonu bekleniyordu, 'yaz' bulundu");
+        assert_eq!(
+            error.text(Lang::Tr),
+            "Satır sonu bekleniyordu, 'yaz' bulundu"
+        );
     }
 
     #[test]
     fn rejects_break_outside_loop() {
         let error = parse_source("kır").unwrap_err();
         assert_eq!(
-            error.message,
+            error.text(Lang::Tr),
             "'kır' yalnızca bir döngünün içinde kullanılabilir"
         );
     }

@@ -1,0 +1,15 @@
+# Modüller, standart kütüphane ve hata yakalama
+içe_aktar "araclar.earth"
+
+yaz(selamla("Ada"))
+yaz("Ortalama:", ortalama([70, 85, 90]))
+
+dene {
+    ortalama([])
+} yakala hata {
+    yaz("Hata yakalandı:", hata)
+}
+
+değişken kelimeler = böl("elma armut kiraz")
+yaz(birleştir(sırala(kelimeler), ", "))
+yaz(büyük_harf("istanbul"))

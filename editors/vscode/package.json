@@ -1,0 +1,27 @@
+{
+  "name": "earth-lang",
+  "displayName": "Earth",
+  "description": "Earth programlama dili için sözdizimi renklendirme (Türkçe ve İngilizce)",
+  "version": "0.3.0",
+  "publisher": "mahmutsibal",
+  "license": "MIT",
+  "engines": { "vscode": "^1.60.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "earth",
+        "aliases": ["Earth", "earth"],
+        "extensions": [".earth"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "earth",
+        "scopeName": "source.earth",
+        "path": "./syntaxes/earth.tmLanguage.json"
+      }
+    ]
+  }
+}

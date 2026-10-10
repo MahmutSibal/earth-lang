@@ -1,0 +1,27 @@
+# Sözlüklerle kelime sayma
+değişken cümle = "bir iki bir üç iki bir"
+değişken sayılar = {}
+değişken kelime = ""
+
+fonksiyon say(k) {
+    eğer k == "" { döndür }
+    eğer içerir(sayılar, k) {
+        sayılar[k] = sayılar[k] + 1
+    } değilse {
+        sayılar[k] = 1
+    }
+}
+
+her harf içinde cümle {
+    eğer harf == " " {
+        say(kelime)
+        kelime = ""
+    } değilse {
+        kelime = kelime + harf
+    }
+}
+say(kelime)
+
+her k içinde sayılar {
+    yaz(k + ":", sayılar[k])
+}

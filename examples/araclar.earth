@@ -1,0 +1,10 @@
+# Başka programların içe aktardığı küçük bir modül (bkz. moduller.earth)
+
+fonksiyon selamla(ad) {
+    döndür "Merhaba, " + ad + "!"
+}
+
+fonksiyon ortalama(sayılar) {
+    eğer uzunluk(sayılar) == 0 { fırlat "Boş listenin ortalaması olmaz" }
+    döndür topla(sayılar) / uzunluk(sayılar)
+}

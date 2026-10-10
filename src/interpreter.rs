@@ -1,17 +1,19 @@
+use std::collections::HashMap;
+use std::fs;
 use std::io::{BufRead, Write};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::ast::{BinaryOp, Expr, LogicalOp, Program, Stmt, UnaryOp};
 use crate::error::{Error, Position};
-use crate::keywords::{builtins, Builtin};
-use crate::value::{format_number, Env, Function, Scope, Value};
+use crate::keywords::{builtins, Builtin, Lang};
+use crate::messages::{Callee, Message};
+use crate::stdlib::{self, dict_key, dict_keys, list_index};
+use crate::value::{Dict, Env, Function, Scope, Value};
 
 /// Deep enough for ordinary recursion, shallow enough to report an error
 /// instead of overflowing the native stack (see `STACK_SIZE` in `main.rs`).
 pub const MAX_CALL_DEPTH: usize = 1000;
-
-/// Upper bound on `aralık` results so that a typo cannot exhaust memory.
-const MAX_RANGE_LENGTH: usize = 10_000_000;
 
 /// How a statement finished: normally, or by jumping out of a block.
 enum Flow {
@@ -26,24 +28,57 @@ enum Flow {
 ///
 /// [`run`]: Interpreter::run
 pub struct Interpreter<'io> {
+    /// Only the built-in functions; every module starts from here.
+    builtins: Env,
     globals: Env,
     output: &'io mut dyn Write,
     input: &'io mut dyn BufRead,
     depth: usize,
+    /// The language values are printed in: `doğru` or `true`.
+    lang: Lang,
+    /// The directory `içe_aktar` paths in the main program are relative to.
+    base_dir: PathBuf,
+    /// Modules being loaded, innermost last, to resolve relative paths and
+    /// detect circular imports.
+    loading: Vec<Module>,
+    /// The definitions of every module loaded so far, by canonical path.
+    modules: HashMap<PathBuf, Vec<(String, Value)>>,
+}
+
+struct Module {
+    path: Rc<Path>,
+    key: PathBuf,
 }
 
 impl<'io> Interpreter<'io> {
-    pub fn new(output: &'io mut dyn Write, input: &'io mut dyn BufRead) -> Self {
-        let globals = Env::default();
+    pub fn new(output: &'io mut dyn Write, input: &'io mut dyn BufRead, lang: Lang) -> Self {
+        let builtin_scope = Env::default();
         for (name, builtin) in builtins() {
-            globals.borrow_mut().define(name, Value::Builtin(builtin));
+            builtin_scope
+                .borrow_mut()
+                .define(name, Value::Builtin(builtin));
         }
         Self {
-            globals,
+            globals: Scope::new_child(&builtin_scope),
+            builtins: builtin_scope,
             output,
             input,
             depth: 0,
+            lang,
+            base_dir: PathBuf::new(),
+            loading: Vec::new(),
+            modules: HashMap::new(),
         }
+    }
+
+    /// Sets the directory that `içe_aktar` paths are relative to; usually
+    /// the directory of the main program.
+    pub fn set_base_dir(&mut self, directory: impl Into<PathBuf>) {
+        self.base_dir = directory.into();
+    }
+
+    pub fn lang(&self) -> Lang {
+        self.lang
     }
 
     /// Runs a program and returns the value of its last statement if that
@@ -91,7 +126,10 @@ impl<'io> Interpreter<'io> {
             } => {
                 let value = self.evaluate(value, env)?;
                 if !env.borrow_mut().assign(name, value) {
-                    return Err(undefined_variable(name, *position));
+                    return Err(Error::at(
+                        *position,
+                        Message::UndefinedVariable(name.clone()),
+                    ));
                 }
             }
             Stmt::IndexAssign {
@@ -103,18 +141,23 @@ impl<'io> Interpreter<'io> {
                 let target = self.evaluate(target, env)?;
                 let index = self.evaluate(index, env)?;
                 let value = self.evaluate(value, env)?;
-                let Value::List(items) = target else {
-                    return Err(Error::at(
-                        *position,
-                        format!(
-                            "Yalnızca liste elemanlarına atama yapılabilir, {} bulundu",
-                            target.type_name()
-                        ),
-                    ));
-                };
-                let mut items = items.borrow_mut();
-                let slot = list_index(&index, items.len(), *position)?;
-                items[slot] = value;
+                match target {
+                    Value::List(items) => {
+                        let mut items = items.borrow_mut();
+                        let slot = list_index(&index, items.len(), *position)?;
+                        items[slot] = value;
+                    }
+                    Value::Dict(dict) => {
+                        let key = dict_key(&index, *position)?;
+                        dict.borrow_mut().insert(key, value);
+                    }
+                    other => {
+                        return Err(Error::at(
+                            *position,
+                            Message::NotAssignable(other.value_type()),
+                        ))
+                    }
+                }
             }
             Stmt::If {
                 condition,
@@ -145,16 +188,14 @@ impl<'io> Interpreter<'io> {
             } => {
                 let items = match self.evaluate(iterable, env)? {
                     Value::List(items) => items.borrow().clone(),
+                    Value::Dict(dict) => dict_keys(&dict.borrow()),
                     Value::String(text) => {
                         text.chars().map(|c| Value::string(c.to_string())).collect()
                     }
                     other => {
                         return Err(Error::at(
                             *position,
-                            format!(
-                                "'{}' türündeki bir değer üzerinde döngü kurulamaz",
-                                other.type_name()
-                            ),
+                            Message::NotIterable(other.value_type()),
                         ))
                     }
                 };
@@ -172,6 +213,7 @@ impl<'io> Interpreter<'io> {
                 let function = Function {
                     decl: Rc::clone(decl),
                     closure: Rc::clone(env),
+                    file: self.loading.last().map(|module| Rc::clone(&module.path)),
                 };
                 env.borrow_mut()
                     .define(decl.name.clone(), Value::Function(Rc::new(function)));
@@ -182,6 +224,36 @@ impl<'io> Interpreter<'io> {
                     None => Value::Nil,
                 };
                 return Ok(Flow::Return(value));
+            }
+            Stmt::Try {
+                body,
+                variable,
+                handler,
+            } => {
+                let error = match self.execute_block(body, &Scope::new_child(env)) {
+                    Ok(flow) => return Ok(flow),
+                    Err(error) => error,
+                };
+                let scope = Scope::new_child(env);
+                if let Some(variable) = variable {
+                    // A thrown value is caught as is; Earth's own errors
+                    // become their message, in the program's language.
+                    let caught = match error.message {
+                        Message::Thrown(value) => value,
+                        message => Value::string(message.render(self.lang)),
+                    };
+                    scope.borrow_mut().define(variable.clone(), caught);
+                }
+                return self.execute_block(handler, &scope);
+            }
+            Stmt::Throw { value, position } => {
+                let value = self.evaluate(value, env)?;
+                return Err(Error::at(*position, Message::Thrown(value)));
+            }
+            Stmt::Import { path, position } => {
+                for (name, value) in self.import(path, *position)? {
+                    env.borrow_mut().define(name, value);
+                }
             }
             Stmt::Break => return Ok(Flow::Break),
             Stmt::Continue => return Ok(Flow::Continue),
@@ -204,10 +276,19 @@ impl<'io> Interpreter<'io> {
                     .collect::<Result<_, _>>()?;
                 Ok(Value::list(items))
             }
+            Expr::Dict(entries) => {
+                let mut dict = Dict::default();
+                for (key_position, key, value) in entries {
+                    let key = dict_key(&self.evaluate(key, env)?, *key_position)?;
+                    let value = self.evaluate(value, env)?;
+                    dict.insert(key, value);
+                }
+                Ok(Value::dict(dict))
+            }
             Expr::Variable { name, position } => env
                 .borrow()
                 .get(name)
-                .ok_or_else(|| undefined_variable(name, *position)),
+                .ok_or_else(|| Error::at(*position, Message::UndefinedVariable(name.clone()))),
             Expr::Unary {
                 op,
                 operand,
@@ -219,7 +300,10 @@ impl<'io> Interpreter<'io> {
                     (UnaryOp::Negate, Value::Number(number)) => Ok(Value::Number(-number)),
                     (UnaryOp::Negate, operand) => Err(Error::at(
                         *position,
-                        format!("'-' işlemi '{}' türüne uygulanamaz", operand.type_name()),
+                        Message::InvalidOperand {
+                            op: "-",
+                            operand: operand.value_type(),
+                        },
                     )),
                 }
             }
@@ -231,7 +315,7 @@ impl<'io> Interpreter<'io> {
             } => {
                 let left = self.evaluate(left, env)?;
                 let right = self.evaluate(right, env)?;
-                binary(*op, left, right, *position)
+                self.binary(*op, left, right, *position)
             }
             Expr::Logical { op, left, right } => {
                 let left = self.evaluate(left, env)?;
@@ -274,13 +358,66 @@ impl<'io> Interpreter<'io> {
                         let slot = list_index(&index, chars.len(), *position)?;
                         Ok(Value::string(chars[slot].to_string()))
                     }
+                    Value::Dict(dict) => {
+                        let key = dict_key(&index, *position)?;
+                        let dict = dict.borrow();
+                        dict.get(&key).cloned().ok_or_else(|| {
+                            Error::at(*position, Message::MissingKey(key.to_string()))
+                        })
+                    }
                     other => Err(Error::at(
                         *position,
-                        format!("'{}' türündeki bir değer indekslenemez", other.type_name()),
+                        Message::NotIndexable(other.value_type()),
                     )),
                 }
             }
         }
+    }
+
+    /// Loads a module once and returns its top-level definitions.
+    fn import(&mut self, path: &str, position: Position) -> Result<Vec<(String, Value)>, Error> {
+        let directory = match self.loading.last() {
+            Some(module) => module.path.parent().unwrap_or(Path::new("")).to_path_buf(),
+            None => self.base_dir.clone(),
+        };
+        let full_path = directory.join(path);
+        let source = fs::read_to_string(&full_path).map_err(|error| {
+            Error::at(
+                position,
+                Message::ImportFailed {
+                    path: path.to_owned(),
+                    error: error.to_string(),
+                },
+            )
+        })?;
+        let key = full_path
+            .canonicalize()
+            .unwrap_or_else(|_| full_path.clone());
+        if let Some(definitions) = self.modules.get(&key) {
+            return Ok(definitions.clone());
+        }
+        if self.loading.iter().any(|module| module.key == key) {
+            return Err(Error::at(position, Message::ImportCycle(path.to_owned())));
+        }
+
+        let module_path: Rc<Path> = Rc::from(full_path.as_path());
+        let program = crate::parse(&source).map_err(|error| error.in_file(&module_path))?;
+        let scope = Scope::new_child(&self.builtins);
+        self.loading.push(Module {
+            path: Rc::clone(&module_path),
+            key: key.clone(),
+        });
+        let result = self.execute_block(&program.statements, &scope);
+        self.loading.pop();
+        result.map_err(|error| error.in_file(&module_path))?;
+
+        let definitions: Vec<(String, Value)> = scope
+            .borrow()
+            .own_values()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+        self.modules.insert(key, definitions.clone());
+        Ok(definitions)
     }
 
     fn call(
@@ -295,28 +432,25 @@ impl<'io> Interpreter<'io> {
             other => {
                 return Err(Error::at(
                     position,
-                    format!("'{}' türündeki bir değer çağrılamaz", other.type_name()),
+                    Message::NotCallable(other.value_type()),
                 ))
             }
         };
 
         let decl = &function.decl;
         if arguments.len() != decl.parameters.len() {
+            let count = decl.parameters.len();
             return Err(Error::at(
                 position,
-                format!(
-                    "'{}' {} argüman bekliyor, {} verildi",
-                    decl.name,
-                    decl.parameters.len(),
-                    arguments.len()
-                ),
+                Message::WrongArity {
+                    callee: Callee::Function(decl.name.clone()),
+                    expected: (count, count),
+                    given: arguments.len(),
+                },
             ));
         }
         if self.depth >= MAX_CALL_DEPTH {
-            return Err(Error::at(
-                position,
-                format!("Çok derin özyineleme (en fazla {MAX_CALL_DEPTH} iç içe çağrı)"),
-            ));
+            return Err(Error::at(position, Message::RecursionLimit(MAX_CALL_DEPTH)));
         }
 
         let scope = Scope::new_child(&function.closure);
@@ -328,6 +462,10 @@ impl<'io> Interpreter<'io> {
         let result = self.execute_block(&decl.body, &scope);
         self.depth -= 1;
 
+        let result = match &function.file {
+            Some(file) => result.map_err(|error| error.in_file(file)),
+            None => result,
+        };
         match result? {
             Flow::Return(value) => Ok(value),
             _ => Ok(Value::Nil),
@@ -340,39 +478,32 @@ impl<'io> Interpreter<'io> {
         arguments: Vec<Value>,
         position: Position,
     ) -> Result<Value, Error> {
-        let (min, max) = match builtin {
-            Builtin::Print => (0, usize::MAX),
-            Builtin::Input => (0, 1),
-            Builtin::Length | Builtin::ToText | Builtin::ToNumber | Builtin::Type => (1, 1),
-            Builtin::Range => (1, 3),
-            Builtin::Push => (2, 2),
-        };
+        let (min, max) = stdlib::arity(builtin);
         if arguments.len() < min || arguments.len() > max {
-            let expected = if min == max {
-                min.to_string()
-            } else {
-                format!("{min}-{max}")
-            };
             return Err(Error::at(
                 position,
-                format!(
-                    "'{}' {expected} argüman bekliyor, {} verildi",
-                    builtin.name(),
-                    arguments.len()
-                ),
+                Message::WrongArity {
+                    callee: Callee::Builtin(builtin),
+                    expected: (min, max),
+                    given: arguments.len(),
+                },
             ));
         }
-        let io_error = |error: std::io::Error| Error::at(position, format!("G/Ç hatası: {error}"));
+        let io_error = |error: std::io::Error| Error::at(position, Message::Io(error.to_string()));
+        let lang = self.lang;
 
         match builtin {
             Builtin::Print => {
-                let line: Vec<String> = arguments.iter().map(Value::to_string).collect();
+                let line: Vec<String> = arguments
+                    .iter()
+                    .map(|argument| argument.display(lang).to_string())
+                    .collect();
                 writeln!(self.output, "{}", line.join(" ")).map_err(io_error)?;
                 Ok(Value::Nil)
             }
             Builtin::Input => {
                 if let Some(prompt) = arguments.first() {
-                    write!(self.output, "{prompt}").map_err(io_error)?;
+                    write!(self.output, "{}", prompt.display(lang)).map_err(io_error)?;
                 }
                 self.output.flush().map_err(io_error)?;
                 let mut line = String::new();
@@ -382,162 +513,62 @@ impl<'io> Interpreter<'io> {
                 let line = line.trim_end_matches(['\n', '\r']);
                 Ok(Value::string(line))
             }
-            Builtin::Length => match &arguments[0] {
-                Value::String(text) => Ok(Value::Number(text.chars().count() as f64)),
-                Value::List(items) => Ok(Value::Number(items.borrow().len() as f64)),
-                other => Err(Error::at(
-                    position,
-                    format!("'{}' türünün uzunluğu yoktur", other.type_name()),
-                )),
-            },
-            Builtin::Range => range(&arguments, position),
-            Builtin::ToText => Ok(Value::string(arguments[0].to_string())),
-            Builtin::ToNumber => Ok(match &arguments[0] {
-                Value::Number(number) => Value::Number(*number),
-                Value::String(text) => match text.trim().parse::<f64>() {
-                    Ok(number) if number.is_finite() => Value::Number(number),
-                    _ => Value::Nil,
-                },
-                _ => Value::Nil,
-            }),
-            Builtin::Push => match &arguments[0] {
-                Value::List(items) => {
-                    items.borrow_mut().push(arguments[1].clone());
-                    Ok(Value::Nil)
-                }
-                other => Err(Error::at(
-                    position,
-                    format!(
-                        "'ekle' ilk argüman olarak liste bekliyor, {} verildi",
-                        other.type_name()
-                    ),
-                )),
-            },
-            Builtin::Type => Ok(Value::string(arguments[0].type_name())),
+            _ => stdlib::call(builtin, &arguments, position, lang),
         }
     }
-}
 
-fn undefined_variable(name: &str, position: Position) -> Error {
-    Error::at(
-        position,
-        format!("Tanımsız değişken '{name}' (önce 'değişken {name} = ...' ile tanımlayın)"),
-    )
-}
+    fn binary(
+        &self,
+        op: BinaryOp,
+        left: Value,
+        right: Value,
+        position: Position,
+    ) -> Result<Value, Error> {
+        use Value::{List, Number, String};
 
-/// Converts an index value into a slot, counting negative indexes from the end.
-fn list_index(index: &Value, length: usize, position: Position) -> Result<usize, Error> {
-    let Value::Number(number) = *index else {
-        return Err(Error::at(
-            position,
-            format!("İndeks sayı olmalı, {} bulundu", index.type_name()),
-        ));
-    };
-    if number.fract() != 0.0 {
-        return Err(Error::at(
-            position,
-            format!("İndeks tam sayı olmalı, {} bulundu", format_number(number)),
-        ));
-    }
-    let resolved = if number < 0.0 {
-        length as f64 + number
-    } else {
-        number
-    };
-    if resolved < 0.0 || resolved >= length as f64 {
-        return Err(Error::at(
-            position,
-            format!(
-                "İndeks {} sınırların dışında (uzunluk {length})",
-                format_number(number)
+        let result = match (op, &left, &right) {
+            (BinaryOp::Equal, _, _) => Value::Bool(left == right),
+            (BinaryOp::NotEqual, _, _) => Value::Bool(left != right),
+
+            (BinaryOp::Add, Number(a), Number(b)) => Number(a + b),
+            (BinaryOp::Add, String(_), _) | (BinaryOp::Add, _, String(_)) => Value::string(
+                format!("{}{}", left.display(self.lang), right.display(self.lang)),
             ),
-        ));
-    }
-    Ok(resolved as usize)
-}
+            (BinaryOp::Add, List(a), List(b)) => {
+                let mut items = a.borrow().clone();
+                items.extend(b.borrow().iter().cloned());
+                Value::list(items)
+            }
+            (BinaryOp::Subtract, Number(a), Number(b)) => Number(a - b),
+            (BinaryOp::Multiply, Number(a), Number(b)) => Number(a * b),
+            (BinaryOp::Divide | BinaryOp::Remainder, Number(_), Number(b)) if *b == 0.0 => {
+                return Err(Error::at(position, Message::DivisionByZero));
+            }
+            (BinaryOp::Divide, Number(a), Number(b)) => Number(a / b),
+            (BinaryOp::Remainder, Number(a), Number(b)) => Number(a % b),
 
-fn range(arguments: &[Value], position: Position) -> Result<Value, Error> {
-    let mut numbers = Vec::with_capacity(arguments.len());
-    for argument in arguments {
-        match argument {
-            Value::Number(number) => numbers.push(*number),
-            other => {
+            (BinaryOp::Less, Number(a), Number(b)) => Value::Bool(a < b),
+            (BinaryOp::LessEqual, Number(a), Number(b)) => Value::Bool(a <= b),
+            (BinaryOp::Greater, Number(a), Number(b)) => Value::Bool(a > b),
+            (BinaryOp::GreaterEqual, Number(a), Number(b)) => Value::Bool(a >= b),
+            (BinaryOp::Less, String(a), String(b)) => Value::Bool(a < b),
+            (BinaryOp::LessEqual, String(a), String(b)) => Value::Bool(a <= b),
+            (BinaryOp::Greater, String(a), String(b)) => Value::Bool(a > b),
+            (BinaryOp::GreaterEqual, String(a), String(b)) => Value::Bool(a >= b),
+
+            _ => {
                 return Err(Error::at(
                     position,
-                    format!("'aralık' sayı bekliyor, {} verildi", other.type_name()),
+                    Message::InvalidOperands {
+                        op: symbol(op),
+                        left: left.value_type(),
+                        right: right.value_type(),
+                    },
                 ))
             }
-        }
+        };
+        Ok(result)
     }
-    let (start, end, step) = match numbers[..] {
-        [end] => (0.0, end, 1.0),
-        [start, end] => (start, end, 1.0),
-        [start, end, step] => (start, end, step),
-        _ => unreachable!("arity is checked by the caller"),
-    };
-    if step == 0.0 || !step.is_finite() {
-        return Err(Error::at(position, "'aralık' adımı sıfır olamaz"));
-    }
-
-    let length = ((end - start) / step).ceil().max(0.0);
-    if !length.is_finite() || length > MAX_RANGE_LENGTH as f64 {
-        return Err(Error::at(
-            position,
-            format!("'aralık' en fazla {MAX_RANGE_LENGTH} eleman üretebilir"),
-        ));
-    }
-    let items = (0..length as usize)
-        .map(|i| Value::Number(start + step * i as f64))
-        .collect();
-    Ok(Value::list(items))
-}
-
-fn binary(op: BinaryOp, left: Value, right: Value, position: Position) -> Result<Value, Error> {
-    use Value::{List, Number, String};
-
-    let result = match (op, &left, &right) {
-        (BinaryOp::Equal, _, _) => Value::Bool(left == right),
-        (BinaryOp::NotEqual, _, _) => Value::Bool(left != right),
-
-        (BinaryOp::Add, Number(a), Number(b)) => Number(a + b),
-        (BinaryOp::Add, String(_), _) | (BinaryOp::Add, _, String(_)) => {
-            Value::string(format!("{left}{right}"))
-        }
-        (BinaryOp::Add, List(a), List(b)) => {
-            let mut items = a.borrow().clone();
-            items.extend(b.borrow().iter().cloned());
-            Value::list(items)
-        }
-        (BinaryOp::Subtract, Number(a), Number(b)) => Number(a - b),
-        (BinaryOp::Multiply, Number(a), Number(b)) => Number(a * b),
-        (BinaryOp::Divide | BinaryOp::Remainder, Number(_), Number(b)) if *b == 0.0 => {
-            return Err(Error::at(position, "Sıfıra bölme"));
-        }
-        (BinaryOp::Divide, Number(a), Number(b)) => Number(a / b),
-        (BinaryOp::Remainder, Number(a), Number(b)) => Number(a % b),
-
-        (BinaryOp::Less, Number(a), Number(b)) => Value::Bool(a < b),
-        (BinaryOp::LessEqual, Number(a), Number(b)) => Value::Bool(a <= b),
-        (BinaryOp::Greater, Number(a), Number(b)) => Value::Bool(a > b),
-        (BinaryOp::GreaterEqual, Number(a), Number(b)) => Value::Bool(a >= b),
-        (BinaryOp::Less, String(a), String(b)) => Value::Bool(a < b),
-        (BinaryOp::LessEqual, String(a), String(b)) => Value::Bool(a <= b),
-        (BinaryOp::Greater, String(a), String(b)) => Value::Bool(a > b),
-        (BinaryOp::GreaterEqual, String(a), String(b)) => Value::Bool(a >= b),
-
-        _ => {
-            return Err(Error::at(
-                position,
-                format!(
-                    "'{}' işlemi '{}' ve '{}' türleri arasında yapılamaz",
-                    symbol(op),
-                    left.type_name(),
-                    right.type_name()
-                ),
-            ))
-        }
-    };
-    Ok(result)
 }
 
 fn symbol(op: BinaryOp) -> &'static str {

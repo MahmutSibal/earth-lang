@@ -36,6 +36,8 @@ pub enum Expr {
     Bool(bool),
     Nil,
     List(Vec<Expr>),
+    /// Entries carry the key position for "keys must be text" errors.
+    Dict(Vec<(Position, Expr, Expr)>),
     Variable {
         name: String,
         position: Position,
@@ -110,6 +112,20 @@ pub enum Stmt {
     },
     Function(Rc<FunctionDecl>),
     Return(Option<Expr>),
+    Try {
+        body: Vec<Stmt>,
+        /// The variable that receives the error, if the handler names one.
+        variable: Option<String>,
+        handler: Vec<Stmt>,
+    },
+    Throw {
+        value: Expr,
+        position: Position,
+    },
+    Import {
+        path: String,
+        position: Position,
+    },
     Break,
     Continue,
 }
