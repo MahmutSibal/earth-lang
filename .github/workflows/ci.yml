@@ -1,9 +1,13 @@
 name: CI
 
+# Runs only from the "Run workflow" button on the Actions tab: GitHub Actions
+# gets no runners on this account yet, so automatic runs only failed and sent
+# e-mails. Once Actions works, re-enable them by adding back:
+#   push:
+#     branches: [main]
+#   pull_request:
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
