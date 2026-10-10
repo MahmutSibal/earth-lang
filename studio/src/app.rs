@@ -14,6 +14,7 @@ use crate::files::{self, Node};
 use crate::highlight::{self, DARK};
 use crate::runner::{Event, Runner};
 use crate::texts::{texts, Texts};
+use crate::update::{self, Status, Updater};
 use crate::workspace;
 
 /// Older terminal output is dropped beyond this many characters.
@@ -91,11 +92,17 @@ pub struct StudioApp {
     allow_close: bool,
     cursor: (usize, usize),
     logo: Option<egui::TextureHandle>,
+    updater: Updater,
+    /// The user dismissed the "update ready" banner for this session.
+    update_banner_hidden: bool,
+    /// Install the update and reopen Studio once the window has closed.
+    relaunch_for_update: bool,
 }
 
 impl StudioApp {
     pub fn new(context: &eframe::CreationContext<'_>, start: Option<PathBuf>) -> Self {
         let egui_context = context.egui_ctx.clone();
+        let update_context = context.egui_ctx.clone();
         configure_style(&egui_context);
         let lang = Lang::Tr;
         let mut app = Self {
@@ -117,6 +124,9 @@ impl StudioApp {
             allow_close: false,
             cursor: (1, 1),
             logo: load_logo(&context.egui_ctx),
+            updater: Updater::start(move || update_context.request_repaint()),
+            update_banner_hidden: false,
+            relaunch_for_update: false,
         };
 
         // `earth-studio program.earth` may give a relative path.
@@ -718,7 +728,30 @@ impl StudioApp {
             } else {
                 texts.ready
             };
+            if let Some(downloads) = self.updater.downloads() {
+                let separator = if self.lang == Lang::Tr { '.' } else { ',' };
+                let text = texts
+                    .downloads
+                    .replace("{count}", &update::group_digits(downloads, separator));
+                ui.label(RichText::new(text).small())
+                    .on_hover_text(texts.downloads_hint);
+                ui.separator();
+            }
             ui.label(RichText::new(state).small());
+            let update_state = match self.updater.status() {
+                Status::Downloading { version, percent } => Some(
+                    texts
+                        .update_downloading
+                        .replace("{version}", &version)
+                        .replace("{percent}", &percent.to_string()),
+                ),
+                Status::UpToDate => Some(texts.up_to_date.to_owned()),
+                _ => None,
+            };
+            if let Some(update_state) = update_state {
+                ui.separator();
+                ui.label(RichText::new(update_state).small());
+            }
             if let Some(status) = &self.status {
                 ui.separator();
                 ui.label(RichText::new(status).small());
@@ -729,6 +762,18 @@ impl StudioApp {
                     Lang::Tr => "Earth (Türkçe)",
                     Lang::En => "Earth (English)",
                 };
+                let version = ui
+                    .add(
+                        egui::Label::new(
+                            RichText::new(concat!("v", env!("CARGO_PKG_VERSION"))).small(),
+                        )
+                        .sense(egui::Sense::click()),
+                    )
+                    .on_hover_text(texts.check_updates);
+                if version.clicked() {
+                    self.updater.check_now();
+                }
+                ui.separator();
                 ui.label(RichText::new("UTF-8").small());
                 ui.separator();
                 ui.label(RichText::new(program_lang).small());
@@ -739,6 +784,39 @@ impl StudioApp {
                     .replace("{column}", &self.cursor.1.to_string());
                 ui.label(RichText::new(position).small());
             });
+        });
+    }
+
+    /// The strip under the toolbar that announces a new version.
+    fn update_banner(&mut self, ui: &mut egui::Ui) {
+        let texts = self.texts();
+        ui.horizontal(|ui| match self.updater.status() {
+            Status::Ready { version } => {
+                ui.label(
+                    RichText::new(texts.update_ready.replace("{version}", &version))
+                        .color(Color32::from_rgb(0x89, 0xd1, 0x85)),
+                );
+                if ui.button(texts.update_now).clicked() {
+                    self.relaunch_for_update = true;
+                    ui.ctx().send_viewport_cmd(ViewportCommand::Close);
+                }
+                if ui.button(texts.update_later).clicked() {
+                    self.update_banner_hidden = true;
+                }
+            }
+            Status::Available { version } => {
+                ui.label(texts.update_available.replace("{version}", &version));
+                if ui.button(texts.update_download).clicked() {
+                    ui.ctx().open_url(egui::OpenUrl::new_tab(format!(
+                        "{}/releases/latest",
+                        update::PROJECT_URL
+                    )));
+                }
+                if ui.button(texts.update_later).clicked() {
+                    self.update_banner_hidden = true;
+                }
+            }
+            _ => {}
         });
     }
 
@@ -829,6 +907,15 @@ impl StudioApp {
 }
 
 impl eframe::App for StudioApp {
+    /// A downloaded update is installed as Studio closes: right away with
+    /// a progress window and a restart when the user asked for it, silently
+    /// otherwise, so the next start already runs the new version.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if matches!(self.updater.status(), Status::Ready { .. }) {
+            self.updater.install(self.relaunch_for_update);
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let context = ui.ctx().clone();
         self.handle_events();
@@ -847,6 +934,19 @@ impl eframe::App for StudioApp {
             self.toolbar(ui);
             ui.add_space(2.0);
         });
+        let announces_update = matches!(
+            self.updater.status(),
+            Status::Ready { .. } | Status::Available { .. }
+        );
+        if announces_update && !self.update_banner_hidden {
+            egui::Panel::top("update")
+                .frame(
+                    egui::Frame::new()
+                        .fill(Color32::from_rgb(0x1e, 0x32, 0x24))
+                        .inner_margin(egui::Margin::symmetric(10, 6)),
+                )
+                .show(ui, |ui| self.update_banner(ui));
+        }
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
         egui::Panel::bottom("terminal")
             .resizable(true)

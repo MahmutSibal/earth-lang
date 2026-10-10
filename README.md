@@ -89,6 +89,29 @@ anlamına gelmez. Dosyayı aynı sayfadaki `SHA256SUMS.txt` ile
 `Get-FileHash EarthStudio-Kurulum.exe` komutuyla doğrulayabilirsiniz. İmzalama
 planı için [docs/imzalama.md](docs/imzalama.md) dosyasına bakın.
 
+### Otomatik güncelleme
+
+Earth Studio açılışta ve açık kaldığı sürece birkaç saatte bir GitHub
+Releases'taki en son sürüme bakar. Yeni bir sürüm varsa:
+
+1. Kurulum dosyasını arka planda indirir ve sürümle birlikte yayınlanan
+   `SHA256SUMS.txt` ile doğrular. Doğrulanmayan dosya silinir, asla
+   çalıştırılmaz.
+2. Üstte "Earth Studio X hazır" şeridini gösterir. **Yeniden başlat ve
+   güncelle** güncellemeyi kurar ve Studio'yu yeni sürümle yeniden açar.
+3. Şeride dokunulmazsa güncelleme Studio kapatılırken sessizce kurulur;
+   bir sonraki açılışta yeni sürüm çalışır.
+
+Yani yeni bir sürüm yayınlamak (bir `v*` etiketi ve Releases'a
+`EarthStudio-Kurulum.exe` ile `SHA256SUMS.txt`) bütün kullanıcıları
+günceller. Durum çubuğundaki sürüm numarasına tıklamak hemen denetler.
+Kurumsal bilgisayarlarda otomatik güncellemeyi kapatmak için
+`EARTH_STUDIO_NO_UPDATE=1` ortam değişkeni tanımlanabilir.
+
+Sol alt köşedeki sayaç, kurulum dosyasının GitHub'dan toplam indirilme
+sayısını gösterir. Studio kullanıcılar hakkında hiçbir bilgi göndermez;
+yalnızca herkese açık sürüm bilgisini okur.
+
 ### Linux ve macOS
 
 Releases sayfasındaki `earth-studio-linux-x64.tar.gz` ya da
@@ -110,13 +133,13 @@ kurulu [Inno Setup](https://jrsoftware.org/isinfo.php) gerekir):
 ```bash
 rustup target add x86_64-pc-windows-gnu
 cargo build --release -p earth-studio --target x86_64-pc-windows-gnu
-cd windows && wine 'C:\InnoSetup\ISCC.exe' /DAppVersion=0.5.0 \
+cd windows && wine 'C:\InnoSetup\ISCC.exe' /DAppVersion=0.6.0 \
   '/DStudioExe=..\target\x86_64-pc-windows-gnu\release\earth-studio.exe' installer.iss
 ```
 
 Sonuç `windows/Output/EarthStudio-Kurulum.exe` olur. Yeni bir sürüm
-yayınlamak için bir etiket gönderin (`git tag v0.5.0 && git push origin
-v0.5.0`); `release` workflow'u kurulum dosyasını, Linux/macOS arşivlerini ve
+yayınlamak için bir etiket gönderin (`git tag v0.6.0 && git push origin
+v0.6.0`); `release` workflow'u kurulum dosyasını, Linux/macOS arşivlerini ve
 `SHA256SUMS.txt`'yi Releases sayfasına ekler.
 
 Kontroller:
@@ -385,6 +408,7 @@ Her `examples/*.earth` dosyası `tests/examples.rs` tarafından çalıştırıl�
 - [ ] Daha fazla insan dili
 - [x] Editör desteği (VS Code sözdizimi renklendirme)
 - [x] Windows kurulum programı (hoş geldin ekranı, masaüstü kısayolu, kaldırıcı)
+- [x] Otomatik güncelleme ve indirme sayacı
 - [x] Earth Studio: gezgin, sekmeli editör ve terminal içeren editör
 - [ ] Sınıflar / kullanıcı tanımlı türler
 - [ ] Dosya okuma ve yazma
