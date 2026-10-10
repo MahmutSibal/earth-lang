@@ -165,6 +165,9 @@ pub enum Message {
         expected: &'static [Type],
         given: Type,
     },
+    MixedSort,
+    EmptySequence(Builtin),
+    EmptySeparator,
     RangeStepZero,
     RangeTooLong(usize),
     Io(String),
@@ -280,6 +283,13 @@ impl Message {
                 types(expected, lang, "veya"),
                 given.name(lang)
             ),
+            Message::MixedSort => {
+                "Yalnızca hepsi sayı ya da hepsi metin olan listeler sıralanabilir".to_owned()
+            }
+            Message::EmptySequence(builtin) => {
+                format!("'{}' boş bir liste ile çağrılamaz", builtin.name(lang))
+            }
+            Message::EmptySeparator => "Ayırıcı boş metin olamaz".to_owned(),
             Message::RangeStepZero => format!("'{}' adımı sıfır olamaz", Builtin::Range.name(lang)),
             Message::RangeTooLong(max) => format!(
                 "'{}' en fazla {max} eleman üretebilir",
@@ -391,6 +401,16 @@ impl Message {
                 types(expected, lang, "or"),
                 given.name(lang)
             ),
+            Message::MixedSort => {
+                "Only lists of all numbers or all strings can be sorted".to_owned()
+            }
+            Message::EmptySequence(builtin) => {
+                format!(
+                    "'{}' cannot be called with an empty list",
+                    builtin.name(lang)
+                )
+            }
+            Message::EmptySeparator => "The separator cannot be an empty string".to_owned(),
             Message::RangeStepZero => {
                 format!("'{}' step cannot be zero", Builtin::Range.name(lang))
             }

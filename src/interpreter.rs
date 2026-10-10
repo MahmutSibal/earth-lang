@@ -4,15 +4,13 @@ use std::rc::Rc;
 use crate::ast::{BinaryOp, Expr, LogicalOp, Program, Stmt, UnaryOp};
 use crate::error::{Error, Position};
 use crate::keywords::{builtins, Builtin, Lang};
-use crate::messages::{Callee, Message, Type};
+use crate::messages::{Callee, Message};
+use crate::stdlib::{self, dict_key, dict_keys, list_index};
 use crate::value::{Dict, Env, Function, Scope, Value};
 
 /// Deep enough for ordinary recursion, shallow enough to report an error
 /// instead of overflowing the native stack (see `STACK_SIZE` in `main.rs`).
 pub const MAX_CALL_DEPTH: usize = 1000;
-
-/// Upper bound on `aralık` results so that a typo cannot exhaust memory.
-const MAX_RANGE_LENGTH: usize = 10_000_000;
 
 /// How a statement finished: normally, or by jumping out of a block.
 enum Flow {
@@ -370,18 +368,7 @@ impl<'io> Interpreter<'io> {
         arguments: Vec<Value>,
         position: Position,
     ) -> Result<Value, Error> {
-        let (min, max) = match builtin {
-            Builtin::Print => (0, usize::MAX),
-            Builtin::Input => (0, 1),
-            Builtin::Length
-            | Builtin::ToText
-            | Builtin::ToNumber
-            | Builtin::Type
-            | Builtin::Keys
-            | Builtin::Values => (1, 1),
-            Builtin::Range => (1, 3),
-            Builtin::Push | Builtin::Contains | Builtin::Remove => (2, 2),
-        };
+        let (min, max) = stdlib::arity(builtin);
         if arguments.len() < min || arguments.len() > max {
             return Err(Error::at(
                 position,
@@ -393,16 +380,6 @@ impl<'io> Interpreter<'io> {
             ));
         }
         let io_error = |error: std::io::Error| Error::at(position, Message::Io(error.to_string()));
-        let wrong_argument = |expected: &'static [Type], given: &Value| {
-            Error::at(
-                position,
-                Message::WrongArgument {
-                    builtin,
-                    expected,
-                    given: given.value_type(),
-                },
-            )
-        };
         let lang = self.lang;
 
         match builtin {
@@ -426,73 +403,7 @@ impl<'io> Interpreter<'io> {
                 let line = line.trim_end_matches(['\n', '\r']);
                 Ok(Value::string(line))
             }
-            Builtin::Length => match &arguments[0] {
-                Value::String(text) => Ok(Value::Number(text.chars().count() as f64)),
-                Value::List(items) => Ok(Value::Number(items.borrow().len() as f64)),
-                Value::Dict(dict) => Ok(Value::Number(dict.borrow().len() as f64)),
-                other => Err(Error::at(position, Message::NoLength(other.value_type()))),
-            },
-            Builtin::Range => range(&arguments, position),
-            Builtin::ToText => Ok(Value::string(arguments[0].display(lang).to_string())),
-            Builtin::ToNumber => Ok(match &arguments[0] {
-                Value::Number(number) => Value::Number(*number),
-                Value::String(text) => match text.trim().parse::<f64>() {
-                    Ok(number) if number.is_finite() => Value::Number(number),
-                    _ => Value::Nil,
-                },
-                _ => Value::Nil,
-            }),
-            Builtin::Push => match &arguments[0] {
-                Value::List(items) => {
-                    items.borrow_mut().push(arguments[1].clone());
-                    Ok(Value::Nil)
-                }
-                other => Err(wrong_argument(&[Type::List], other)),
-            },
-            Builtin::Type => Ok(Value::string(arguments[0].value_type().name(lang))),
-            Builtin::Keys => match &arguments[0] {
-                Value::Dict(dict) => Ok(Value::list(dict_keys(&dict.borrow()))),
-                other => Err(wrong_argument(&[Type::Dict], other)),
-            },
-            Builtin::Values => match &arguments[0] {
-                Value::Dict(dict) => Ok(Value::list(
-                    dict.borrow()
-                        .iter()
-                        .map(|(_, value)| value.clone())
-                        .collect(),
-                )),
-                other => Err(wrong_argument(&[Type::Dict], other)),
-            },
-            Builtin::Contains => {
-                let needle = &arguments[1];
-                let found = match &arguments[0] {
-                    Value::List(items) => items.borrow().contains(needle),
-                    Value::Dict(dict) => match needle {
-                        Value::String(key) => dict.borrow().contains(key),
-                        _ => false,
-                    },
-                    Value::String(text) => match needle {
-                        Value::String(part) => text.contains(&**part),
-                        other => return Err(wrong_argument(&[Type::Text], other)),
-                    },
-                    other => {
-                        return Err(wrong_argument(&[Type::List, Type::Dict, Type::Text], other))
-                    }
-                };
-                Ok(Value::Bool(found))
-            }
-            Builtin::Remove => match &arguments[0] {
-                Value::Dict(dict) => {
-                    let key = dict_key(&arguments[1], position)?;
-                    Ok(dict.borrow_mut().remove(&key).unwrap_or(Value::Nil))
-                }
-                Value::List(items) => {
-                    let mut items = items.borrow_mut();
-                    let slot = list_index(&arguments[1], items.len(), position)?;
-                    Ok(items.remove(slot))
-                }
-                other => Err(wrong_argument(&[Type::List, Type::Dict], other)),
-            },
+            _ => stdlib::call(builtin, &arguments, position, lang),
         }
     }
 
@@ -548,85 +459,6 @@ impl<'io> Interpreter<'io> {
         };
         Ok(result)
     }
-}
-
-/// Dictionary keys are text; anything else is reported at `position`.
-fn dict_key(key: &Value, position: Position) -> Result<Rc<str>, Error> {
-    match key {
-        Value::String(text) => Ok(Rc::clone(text)),
-        other => Err(Error::at(position, Message::KeyNotText(other.value_type()))),
-    }
-}
-
-fn dict_keys(dict: &Dict) -> Vec<Value> {
-    dict.iter()
-        .map(|(key, _)| Value::String(Rc::clone(key)))
-        .collect()
-}
-
-/// Converts an index value into a slot, counting negative indexes from the end.
-fn list_index(index: &Value, length: usize, position: Position) -> Result<usize, Error> {
-    let Value::Number(number) = *index else {
-        return Err(Error::at(
-            position,
-            Message::IndexNotNumber(index.value_type()),
-        ));
-    };
-    if number.fract() != 0.0 {
-        return Err(Error::at(position, Message::IndexNotWhole(number)));
-    }
-    let resolved = if number < 0.0 {
-        length as f64 + number
-    } else {
-        number
-    };
-    if resolved < 0.0 || resolved >= length as f64 {
-        return Err(Error::at(
-            position,
-            Message::IndexOutOfRange {
-                index: number,
-                length,
-            },
-        ));
-    }
-    Ok(resolved as usize)
-}
-
-fn range(arguments: &[Value], position: Position) -> Result<Value, Error> {
-    let mut numbers = Vec::with_capacity(arguments.len());
-    for argument in arguments {
-        match argument {
-            Value::Number(number) => numbers.push(*number),
-            other => {
-                return Err(Error::at(
-                    position,
-                    Message::WrongArgument {
-                        builtin: Builtin::Range,
-                        expected: &[Type::Number],
-                        given: other.value_type(),
-                    },
-                ))
-            }
-        }
-    }
-    let (start, end, step) = match numbers[..] {
-        [end] => (0.0, end, 1.0),
-        [start, end] => (start, end, 1.0),
-        [start, end, step] => (start, end, step),
-        _ => unreachable!("arity is checked by the caller"),
-    };
-    if step == 0.0 || !step.is_finite() {
-        return Err(Error::at(position, Message::RangeStepZero));
-    }
-
-    let length = ((end - start) / step).ceil().max(0.0);
-    if !length.is_finite() || length > MAX_RANGE_LENGTH as f64 {
-        return Err(Error::at(position, Message::RangeTooLong(MAX_RANGE_LENGTH)));
-    }
-    let items = (0..length as usize)
-        .map(|i| Value::Number(start + step * i as f64))
-        .collect();
-    Ok(Value::list(items))
 }
 
 fn symbol(op: BinaryOp) -> &'static str {

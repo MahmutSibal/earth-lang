@@ -10,6 +10,7 @@ pub mod keywords;
 pub mod lexer;
 pub mod messages;
 pub mod parser;
+pub mod stdlib;
 pub mod value;
 
 use std::io::{BufRead, Write};
@@ -288,5 +289,65 @@ yaz({} == {}, {\"a\": 1, \"b\": 2} == {\"b\": 2, \"a\": 1})";
         );
         let error = run_error("print(len(1, 2))");
         assert_eq!(error.text(Lang::En), "'len' expects 1 argument, got 2");
+    }
+
+    #[test]
+    fn provides_text_functions() {
+        assert_eq!(
+            run("yaz(büyük_harf(\"iğdır\"), küçük_harf(\"IŞIK\"), kırp(\"  a  \") + \"|\")")
+                .unwrap(),
+            "İĞDIR ışık a|\n"
+        );
+        assert_eq!(
+            run("yaz(böl(\"a,b,c\", \",\"), böl(\" bir  iki \"), birleştir([1, 2, 3], \"-\"))")
+                .unwrap(),
+            "[\"a\", \"b\", \"c\"] [\"bir\", \"iki\"] 1-2-3\n"
+        );
+        assert_eq!(
+            run("yaz(değiştir(\"merhaba dünya\", \"dünya\", \"Earth\"), ters(\"abc\"))").unwrap(),
+            "merhaba Earth cba\n"
+        );
+    }
+
+    #[test]
+    fn provides_math_functions() {
+        assert_eq!(
+            run("yaz(mutlak(-3), karekök(16), üs(2, 10), yuvarla(2.567, 2), taban(2.7), tavan(2.1))")
+                .unwrap(),
+            "3 4 1024 2.57 2 3\n"
+        );
+        assert_eq!(
+            run("yaz(en_küçük(3, 1, 2), en_büyük([3, 9, 2]), topla([1, 2, 3.5]))").unwrap(),
+            "1 9 6.5\n"
+        );
+        let source = "\
+her i içinde aralık(100) {
+    değişken r = rastgele(1, 6)
+    eğer r < 1 veya r > 6 veya r != taban(r) { yaz(\"hata\", r) }
+}
+değişken k = rastgele()
+yaz(k >= 0 ve k < 1)";
+        assert_eq!(run(source).unwrap(), "doğru\n");
+    }
+
+    #[test]
+    fn provides_list_functions() {
+        assert_eq!(
+            run("değişken l = [3, 1, 2]\nyaz(sırala(l), l, ters(l), dilim(l, 1), dilim(l, 0, -1))")
+                .unwrap(),
+            "[1, 2, 3] [3, 1, 2] [2, 1, 3] [1, 2] [3, 1]\n"
+        );
+        assert_eq!(
+            run("yaz(sırala([\"b\", \"a\"]), dilim(\"Merhaba\", 0, 3))").unwrap(),
+            "[\"a\", \"b\"] Mer\n"
+        );
+        assert_eq!(
+            run_error("sırala([1, \"a\"])").text(Lang::Tr),
+            "Yalnızca hepsi sayı ya da hepsi metin olan listeler sıralanabilir"
+        );
+        assert_eq!(
+            run_error("print(upper(1))").text(Lang::En),
+            "'upper' expects string, got number"
+        );
     }
 }
