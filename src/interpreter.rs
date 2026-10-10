@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crate::ast::{BinaryOp, Expr, LogicalOp, Program, Stmt, UnaryOp};
 use crate::error::{Error, Position};
 use crate::keywords::{builtins, Builtin};
-use crate::value::{format_number, Env, Function, Scope, Value};
+use crate::value::{format_number, Dict, Env, Function, Scope, Value};
 
 /// Deep enough for ordinary recursion, shallow enough to report an error
 /// instead of overflowing the native stack (see `STACK_SIZE` in `main.rs`).
@@ -103,18 +103,26 @@ impl<'io> Interpreter<'io> {
                 let target = self.evaluate(target, env)?;
                 let index = self.evaluate(index, env)?;
                 let value = self.evaluate(value, env)?;
-                let Value::List(items) = target else {
-                    return Err(Error::at(
-                        *position,
-                        format!(
-                            "Yalnızca liste elemanlarına atama yapılabilir, {} bulundu",
-                            target.type_name()
+                match target {
+                    Value::List(items) => {
+                        let mut items = items.borrow_mut();
+                        let slot = list_index(&index, items.len(), *position)?;
+                        items[slot] = value;
+                    }
+                    Value::Dict(dict) => {
+                        let key = dict_key(&index, *position)?;
+                        dict.borrow_mut().insert(key, value);
+                    }
+                    other => {
+                        return Err(Error::at(
+                            *position,
+                            format!(
+                            "Yalnızca liste ve sözlük elemanlarına atama yapılabilir, {} bulundu",
+                            other.type_name()
                         ),
-                    ));
-                };
-                let mut items = items.borrow_mut();
-                let slot = list_index(&index, items.len(), *position)?;
-                items[slot] = value;
+                        ))
+                    }
+                }
             }
             Stmt::If {
                 condition,
@@ -145,6 +153,7 @@ impl<'io> Interpreter<'io> {
             } => {
                 let items = match self.evaluate(iterable, env)? {
                     Value::List(items) => items.borrow().clone(),
+                    Value::Dict(dict) => dict_keys(&dict.borrow()),
                     Value::String(text) => {
                         text.chars().map(|c| Value::string(c.to_string())).collect()
                     }
@@ -203,6 +212,15 @@ impl<'io> Interpreter<'io> {
                     .map(|item| self.evaluate(item, env))
                     .collect::<Result<_, _>>()?;
                 Ok(Value::list(items))
+            }
+            Expr::Dict(entries) => {
+                let mut dict = Dict::default();
+                for (key_position, key, value) in entries {
+                    let key = dict_key(&self.evaluate(key, env)?, *key_position)?;
+                    let value = self.evaluate(value, env)?;
+                    dict.insert(key, value);
+                }
+                Ok(Value::dict(dict))
             }
             Expr::Variable { name, position } => env
                 .borrow()
@@ -274,6 +292,18 @@ impl<'io> Interpreter<'io> {
                         let slot = list_index(&index, chars.len(), *position)?;
                         Ok(Value::string(chars[slot].to_string()))
                     }
+                    Value::Dict(dict) => {
+                        let key = dict_key(&index, *position)?;
+                        let dict = dict.borrow();
+                        dict.get(&key).cloned().ok_or_else(|| {
+                            Error::at(
+                                *position,
+                                format!(
+                                    "Sözlükte {key:?} anahtarı yok ('içerir' ile kontrol edebilirsiniz)"
+                                ),
+                            )
+                        })
+                    }
                     other => Err(Error::at(
                         *position,
                         format!("'{}' türündeki bir değer indekslenemez", other.type_name()),
@@ -343,9 +373,14 @@ impl<'io> Interpreter<'io> {
         let (min, max) = match builtin {
             Builtin::Print => (0, usize::MAX),
             Builtin::Input => (0, 1),
-            Builtin::Length | Builtin::ToText | Builtin::ToNumber | Builtin::Type => (1, 1),
+            Builtin::Length
+            | Builtin::ToText
+            | Builtin::ToNumber
+            | Builtin::Type
+            | Builtin::Keys
+            | Builtin::Values => (1, 1),
             Builtin::Range => (1, 3),
-            Builtin::Push => (2, 2),
+            Builtin::Push | Builtin::Contains | Builtin::Remove => (2, 2),
         };
         if arguments.len() < min || arguments.len() > max {
             let expected = if min == max {
@@ -385,6 +420,7 @@ impl<'io> Interpreter<'io> {
             Builtin::Length => match &arguments[0] {
                 Value::String(text) => Ok(Value::Number(text.chars().count() as f64)),
                 Value::List(items) => Ok(Value::Number(items.borrow().len() as f64)),
+                Value::Dict(dict) => Ok(Value::Number(dict.borrow().len() as f64)),
                 other => Err(Error::at(
                     position,
                     format!("'{}' türünün uzunluğu yoktur", other.type_name()),
@@ -414,8 +450,102 @@ impl<'io> Interpreter<'io> {
                 )),
             },
             Builtin::Type => Ok(Value::string(arguments[0].type_name())),
+            Builtin::Keys => match &arguments[0] {
+                Value::Dict(dict) => Ok(Value::list(dict_keys(&dict.borrow()))),
+                other => Err(expected_dict(builtin, other, position)),
+            },
+            Builtin::Values => match &arguments[0] {
+                Value::Dict(dict) => Ok(Value::list(
+                    dict.borrow()
+                        .iter()
+                        .map(|(_, value)| value.clone())
+                        .collect(),
+                )),
+                other => Err(expected_dict(builtin, other, position)),
+            },
+            Builtin::Contains => {
+                let needle = &arguments[1];
+                let found = match &arguments[0] {
+                    Value::List(items) => items.borrow().contains(needle),
+                    Value::Dict(dict) => match needle {
+                        Value::String(key) => dict.borrow().contains(key),
+                        _ => false,
+                    },
+                    Value::String(text) => match needle {
+                        Value::String(part) => text.contains(&**part),
+                        other => {
+                            return Err(Error::at(
+                                position,
+                                format!(
+                                    "Metin içinde yalnızca metin aranabilir, {} verildi",
+                                    other.type_name()
+                                ),
+                            ))
+                        }
+                    },
+                    other => {
+                        return Err(Error::at(
+                            position,
+                            format!(
+                                "'içerir' liste, sözlük veya metin bekliyor, {} verildi",
+                                other.type_name()
+                            ),
+                        ))
+                    }
+                };
+                Ok(Value::Bool(found))
+            }
+            Builtin::Remove => match &arguments[0] {
+                Value::Dict(dict) => {
+                    let key = dict_key(&arguments[1], position)?;
+                    Ok(dict.borrow_mut().remove(&key).unwrap_or(Value::Nil))
+                }
+                Value::List(items) => {
+                    let mut items = items.borrow_mut();
+                    let slot = list_index(&arguments[1], items.len(), position)?;
+                    Ok(items.remove(slot))
+                }
+                other => Err(Error::at(
+                    position,
+                    format!(
+                        "'sil' liste veya sözlük bekliyor, {} verildi",
+                        other.type_name()
+                    ),
+                )),
+            },
         }
     }
+}
+
+/// Dictionary keys are text; anything else is reported at `position`.
+fn dict_key(key: &Value, position: Position) -> Result<Rc<str>, Error> {
+    match key {
+        Value::String(text) => Ok(Rc::clone(text)),
+        other => Err(Error::at(
+            position,
+            format!(
+                "Sözlük anahtarı metin olmalı, {} bulundu (gerekirse metin(...) kullanın)",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
+fn dict_keys(dict: &Dict) -> Vec<Value> {
+    dict.iter()
+        .map(|(key, _)| Value::String(Rc::clone(key)))
+        .collect()
+}
+
+fn expected_dict(builtin: Builtin, found: &Value, position: Position) -> Error {
+    Error::at(
+        position,
+        format!(
+            "'{}' sözlük bekliyor, {} verildi",
+            builtin.name(),
+            found.type_name()
+        ),
+    )
 }
 
 fn undefined_variable(name: &str, position: Position) -> Error {

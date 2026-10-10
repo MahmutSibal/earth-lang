@@ -385,6 +385,7 @@ impl Parser<'_> {
                 self.expect(TokenKind::RightParen, "')'")?;
                 Ok(expression)
             }
+            TokenKind::LeftBrace => self.dict_literal(),
             TokenKind::LeftBracket => {
                 Ok(Expr::List(self.list_items(TokenKind::RightBracket, "']'")?))
             }
@@ -392,6 +393,35 @@ impl Parser<'_> {
                 token.position,
                 format!("İfade bekleniyordu, {} bulundu", other.describe()),
             )),
+        }
+    }
+
+    /// `{"anahtar": değer, ...}`. Unlike blocks, a dictionary may span
+    /// several lines freely.
+    fn dict_literal(&mut self) -> Result<Expr, Error> {
+        let mut entries = Vec::new();
+        self.skip_newlines();
+        while !self.check(&TokenKind::RightBrace) {
+            let key_position = self.peek().position;
+            let key = self.expression()?;
+            self.skip_newlines();
+            self.expect(TokenKind::Colon, "':'")?;
+            self.skip_newlines();
+            let value = self.expression()?;
+            entries.push((key_position, key, value));
+            self.skip_newlines();
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+            self.skip_newlines();
+        }
+        self.expect(TokenKind::RightBrace, "'}'")?;
+        Ok(Expr::Dict(entries))
+    }
+
+    fn skip_newlines(&mut self) {
+        while self.check(&TokenKind::Newline) {
+            self.advance();
         }
     }
 

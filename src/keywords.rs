@@ -73,6 +73,10 @@ pub enum Builtin {
     ToNumber,
     Push,
     Type,
+    Keys,
+    Values,
+    Contains,
+    Remove,
 }
 
 const BUILTINS: &[(Builtin, &[&str])] = &[
@@ -84,6 +88,10 @@ const BUILTINS: &[(Builtin, &[&str])] = &[
     (Builtin::ToNumber, &["sayı", "sayi", "number"]),
     (Builtin::Push, &["ekle", "push"]),
     (Builtin::Type, &["tür", "tur", "type"]),
+    (Builtin::Keys, &["anahtarlar", "keys"]),
+    (Builtin::Values, &["değerler", "degerler", "values"]),
+    (Builtin::Contains, &["içerir", "icerir", "contains"]),
+    (Builtin::Remove, &["sil", "remove"]),
 ];
 
 /// Every (spelling, builtin) pair, used to populate the global scope.
@@ -105,7 +113,7 @@ impl Builtin {
 
 #[cfg(test)]
 mod tests {
-    use super::{keyword, Keyword, KEYWORDS};
+    use super::{keyword, Keyword, BUILTINS, KEYWORDS};
 
     #[test]
     fn every_spelling_maps_to_one_keyword() {
@@ -118,8 +126,10 @@ mod tests {
     #[test]
     fn spellings_are_unique() {
         let mut seen = std::collections::HashSet::new();
-        for (_, spellings) in KEYWORDS {
-            for spelling in *spellings {
+        let keyword_spellings = KEYWORDS.iter().map(|(_, spellings)| *spellings);
+        let builtin_spellings = BUILTINS.iter().map(|(_, spellings)| *spellings);
+        for spellings in keyword_spellings.chain(builtin_spellings) {
+            for spelling in spellings {
                 assert!(seen.insert(*spelling), "duplicate spelling {spelling}");
             }
         }

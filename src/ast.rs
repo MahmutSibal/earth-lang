@@ -36,6 +36,8 @@ pub enum Expr {
     Bool(bool),
     Nil,
     List(Vec<Expr>),
+    /// Entries carry the key position for "keys must be text" errors.
+    Dict(Vec<(Position, Expr, Expr)>),
     Variable {
         name: String,
         position: Position,

@@ -194,4 +194,49 @@ yaz(liste, uzunluk(liste), liste[-1])";
             "43 boş 3doğru liste\n"
         );
     }
+
+    #[test]
+    fn supports_dictionaries() {
+        let source = "\
+değişken kişi = {
+    \"ad\": \"Ada\",
+    \"yaş\": 36,
+}
+kişi[\"şehir\"] = \"Londra\"
+kişi[\"yaş\"] = kişi[\"yaş\"] + 1
+yaz(kişi)
+yaz(uzunluk(kişi), içerir(kişi, \"ad\"), içerir(kişi, \"soyad\"))
+yaz(sil(kişi, \"şehir\"), anahtarlar(kişi), değerler(kişi))
+her k içinde kişi { yaz(k + \"=\" + kişi[k]) }
+yaz({} == {}, {\"a\": 1, \"b\": 2} == {\"b\": 2, \"a\": 1})";
+        assert_eq!(
+            run(source).unwrap(),
+            "{\"ad\": \"Ada\", \"yaş\": 37, \"şehir\": \"Londra\"}\n\
+             3 doğru yanlış\n\
+             Londra [\"ad\", \"yaş\"] [\"Ada\", 37]\n\
+             ad=Ada\n\
+             yaş=37\n\
+             doğru doğru\n"
+        );
+    }
+
+    #[test]
+    fn contains_and_remove_work_on_lists_and_text() {
+        assert_eq!(
+            run("değişken l = [1, 2, 3]\nyaz(sil(l, 0), l, içerir(l, 3), içerir(\"Merhaba\", \"hab\"))")
+                .unwrap(),
+            "1 [2, 3] doğru doğru\n"
+        );
+    }
+
+    #[test]
+    fn reports_dictionary_errors() {
+        let error = run_error("değişken s = {\"a\": 1}\nyaz(s[\"b\"])");
+        assert_eq!(error.position, Some(Position::new(2, 6)));
+        assert!(error.message.starts_with("Sözlükte \"b\" anahtarı yok"));
+
+        let error = run_error("değişken s = {1: 2}");
+        assert_eq!(error.position, Some(Position::new(1, 15)));
+        assert!(error.message.starts_with("Sözlük anahtarı metin olmalı"));
+    }
 }

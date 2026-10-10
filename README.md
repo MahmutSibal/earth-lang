@@ -82,6 +82,11 @@ klavyeler için ASCII yazımlar da kabul edilir (`eger`, `degilse`, …).
   herhangi bir değer eklenebilir: `"x = " + 5`.
 - **Listeler:** `[1, "iki", doğru]`. İndeksleme `liste[0]`, sondan saymak için
   `liste[-1]`, atama `liste[0] = 5`. `+` iki listeyi birleştirir.
+- **Sözlükler:** `{"ad": "Ada", "yaş": 36}`. Anahtarlar metindir. Okuma
+  `kişi["ad"]`, ekleme ve güncelleme `kişi["şehir"] = "Londra"`. Olmayan bir
+  anahtarı okumak hata verir, önce `içerir(kişi, "şehir")` ile kontrol
+  edilebilir. Sözlükler ekleme sırasını korur. `her k içinde kişi` anahtarlar
+  üzerinde döner.
 - **Karşılaştırma:** `== != < <= > >=`. Sayılar ve metinler sıralanabilir.
 - **Doğruluk:** yalnızca `yanlış` ve `boş` yanlış sayılır. `0` ve `""` doğrudur.
 - `ve` / `veya` kısa devre yapar: sağ taraf yalnızca gerekirse hesaplanır.
@@ -120,16 +125,21 @@ fonksiyon sayaç_yap() {
 | `uzunluk(x)` | `len` | metin veya liste uzunluğu |
 | `aralık(son)`, `aralık(baş, son, adım?)` | `range` | sayı listesi üretir |
 | `ekle(liste, değer)` | `push` | listenin sonuna ekler |
+| `sil(liste, indeks)`, `sil(sözlük, anahtar)` | `remove` | elemanı çıkarır ve döndürür |
+| `içerir(x, aranan)` | `contains` | listede eleman, sözlükte anahtar, metinde alt metin var mı |
+| `anahtarlar(sözlük)` | `keys` | anahtarların listesi |
+| `değerler(sözlük)` | `values` | değerlerin listesi |
 | `metin(x)` | `str` | değeri metne çevirir |
 | `sayı(x)` | `number` | metni sayıya çevirir; olmazsa `boş` döner |
-| `tür(x)` | `type` | `"sayı"`, `"metin"`, `"liste"`, … |
+| `tür(x)` | `type` | `"sayı"`, `"metin"`, `"liste"`, `"sözlük"`, … |
 
 ### Sözdizimi notları
 
 - Her satıra bir komut yazılır. Aynı satırda birden fazla komut için `;`
   kullanın.
 - `#` ile başlayan kısım satır sonuna kadar yorumdur.
-- Parantez ve köşeli parantez içindeki ifadeler birden fazla satıra yayılabilir.
+- Parantez, köşeli parantez ve sözlük içindeki ifadeler birden fazla satıra
+  yayılabilir.
 - `değilse`, kapanan `}` ile aynı satırda ya da bir sonraki satırda olabilir.
 
 ### Hata mesajları
@@ -202,7 +212,7 @@ Her `examples/*.earth` dosyası `tests/examples.rs` tarafından çalıştırıl�
 - [x] Fonksiyonlar, özyineleme ve kapanışlar
 - [x] Listeler
 - [x] Konum bilgili hata mesajları ve REPL
-- [ ] Sözlükler (anahtar-değer yapıları)
+- [x] Sözlükler (anahtar-değer yapıları)
 - [ ] Hata mesajlarının da çok dilli olması
 - [ ] Modüller / dosya içe aktarma
 - [ ] Daha fazla insan dili

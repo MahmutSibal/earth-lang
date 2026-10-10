@@ -53,6 +53,11 @@ fn selam() {
 }
 
 #[test]
+fn sozluk() {
+    assert_eq!(run_example("sozluk.earth", ""), "bir: 3\niki: 2\nüç: 1\n");
+}
+
+#[test]
 fn every_example_is_covered() {
     let mut names: Vec<String> = fs::read_dir("examples")
         .unwrap()
@@ -66,7 +71,8 @@ fn every_example_is_covered() {
             "fizzbuzz.earth",
             "hello.earth",
             "liste.earth",
-            "selam.earth"
+            "selam.earth",
+            "sozluk.earth"
         ]
     );
 }
