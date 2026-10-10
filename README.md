@@ -101,6 +101,9 @@ klavyeler için ASCII yazımlar da kabul edilir (`eger`, `degilse`, …).
 | `ve` / `veya` / `değil` | `degil` | `and` / `or` / `not` | mantıksal işlemler |
 | `doğru` / `yanlış` | `dogru` / `yanlis` | `true` / `false` | mantıksal değerler |
 | `boş` | `bos` | `nil` | değer yok |
+| `dene` / `yakala` | | `try` / `catch` | hata yakalama |
+| `fırlat` | `firlat` | `throw` | hata fırlatma |
+| `içe_aktar` | `ice_aktar` | `import` | başka bir dosyayı yükleme |
 
 ### Değerler ve işlemler
 
@@ -160,6 +163,71 @@ fonksiyon sayaç_yap() {
 | `sayı(x)` | `number` | metni sayıya çevirir; olmazsa `boş` döner |
 | `tür(x)` | `type` | `"sayı"`, `"metin"`, `"liste"`, `"sözlük"`, … |
 
+**Metin**
+
+| Türkçe | English | Açıklama |
+|---|---|---|
+| `büyük_harf(m)`, `küçük_harf(m)` | `upper`, `lower` | harf büyüklüğü; Türkçe programlarda `i`↔`İ`, `ı`↔`I` |
+| `kırp(m)` | `trim` | baştaki ve sondaki boşlukları siler |
+| `böl(m, ayırıcı?)` | `split` | metni parçalara ayırır; ayırıcı yoksa boşluklardan |
+| `birleştir(liste, ayırıcı?)` | `join` | elemanları metin olarak birleştirir |
+| `değiştir(m, eski, yeni)` | `replace` | geçen her `eski`yi `yeni` yapar |
+
+**Matematik**
+
+| Türkçe | English | Açıklama |
+|---|---|---|
+| `mutlak(x)`, `karekök(x)`, `üs(x, y)` | `abs`, `sqrt`, `pow` | |
+| `yuvarla(x, basamak?)`, `taban(x)`, `tavan(x)` | `round`, `floor`, `ceil` | |
+| `rastgele()`, `rastgele(n)`, `rastgele(a, b)` | `random` | [0, 1) kesir, [0, n) ya da [a, b] tam sayı |
+| `en_küçük(…)`, `en_büyük(…)` | `min`, `max` | sayılar ya da bir sayı listesi |
+| `topla(liste)` | `sum` | sayıların toplamı |
+
+**Liste**
+
+| Türkçe | English | Açıklama |
+|---|---|---|
+| `sırala(liste)` | `sort` | sıralanmış yeni liste (hepsi sayı ya da hepsi metin) |
+| `ters(x)` | `reverse` | ters çevrilmiş yeni liste veya metin |
+| `dilim(x, baş, son?)` | `slice` | `baş`tan `son`a kadarki parça; negatif indeks sondan sayar |
+
+### Hata yakalama
+
+```earth
+fonksiyon böl_güvenli(a, b) {
+    eğer b == 0 { fırlat "sıfıra bölünemez" }
+    döndür a / b
+}
+
+dene {
+    yaz(böl_güvenli(1, 0))
+} yakala hata {
+    yaz("Hata:", hata)
+}
+```
+
+`fırlat` herhangi bir değeri (metin, sözlük, …) fırlatabilir; `yakala`
+o değeri olduğu gibi alır. Earth'ün kendi hataları (sıfıra bölme, olmayan
+indeks, …) da yakalanabilir; bu durumda hata değişkeni mesajı metin olarak
+taşır. `yakala`dan sonraki değişken adı isteğe bağlıdır.
+
+### Modüller
+
+```earth
+# geometri.earth
+değişken PI = 3.14159
+fonksiyon alan(r) { döndür PI * r * r }
+
+# ana.earth
+içe_aktar "geometri.earth"
+yaz(alan(2))
+```
+
+`içe_aktar`, dosyayı içe aktaran dosyanın klasörüne göre bulur ve yalnızca
+bir kez çalıştırır. Modül kendi kapsamında çalışır, yani içe aktaranın
+değişkenlerini göremez; tanımladığı değişkenler ve fonksiyonlar içe aktarana
+kopyalanır. Modüldeki bir hata, modül dosyasının adı ve satırıyla gösterilir.
+
 ### Sözdizimi notları
 
 - Her satıra bir komut yazılır. Aynı satırda birden fazla komut için `;`
@@ -192,6 +260,12 @@ Earth hatası: program.earth:2:14: '*' işlemi 'metin' ve 'sayı' türleri aras�
   |              ^
 ```
 
+## Editör desteği
+
+`editors/vscode` klasörü VS Code için sözdizimi renklendirme eklentisidir.
+Kurulum için [editors/vscode/README.md](editors/vscode/README.md) dosyasına
+bakın.
+
 ## Mimari
 
 - **`src/keywords.rs`:** dilin çok dilli sözlüğü. Anahtar kelimelerin ve
@@ -201,8 +275,9 @@ Earth hatası: program.earth:2:14: '*' işlemi 'metin' ve 'sayı' türleri aras�
 - **`src/parser.rs`, `src/ast.rs`:** öncelik sıralı özyinelemeli iniş
   (recursive descent) ayrıştırıcı ve sözdizimi ağacı. `kır` / `döndür` gibi
   yanlış yerde kullanılan komutları çalıştırmadan önce yakalar.
-- **`src/interpreter.rs`, `src/value.rs`:** ağaç gezen yorumlayıcı, değerler ve
-  kapsamlar.
+- **`src/interpreter.rs`, `src/value.rs`:** ağaç gezen yorumlayıcı, değerler,
+  kapsamlar, hata yakalama ve modüller.
+- **`src/stdlib.rs`:** girdi/çıktı dışındaki yerleşik fonksiyonlar.
 - **`src/main.rs`:** dosya çalıştırıcı, hata raporlama ve REPL.
 
 Proje yalnızca Rust standart kütüphanesini kullanır.
@@ -238,9 +313,11 @@ Lexer, parser ve yorumlayıcıda değişiklik gerekmez.
 
 1. `src/keywords.rs` içinde `Builtin` enum'una bir varyant ve `BUILTINS`
    tablosuna yazımlarını ekleyin.
-2. `src/interpreter.rs` içinde `call_builtin` fonksiyonuna argüman sayısını ve
-   davranışı ekleyin.
-3. `src/lib.rs` içine testler ekleyin ve bu README'deki tabloyu güncelleyin.
+2. `src/stdlib.rs` içinde `arity` ve `call` fonksiyonlarına argüman sayısını
+   ve davranışı ekleyin.
+3. Editör renklendirmesini yeniden üretin:
+   `python3 editors/vscode/gen_grammar.py src/keywords.rs editors/vscode/syntaxes/earth.tmLanguage.json`
+4. `src/lib.rs` içine testler ekleyin ve bu README'deki tabloyu güncelleyin.
 
 ### Yeni bir sözdizimi eklemek
 
@@ -258,6 +335,12 @@ Her `examples/*.earth` dosyası `tests/examples.rs` tarafından çalıştırıl�
 - [x] Konum bilgili hata mesajları ve REPL
 - [x] Sözlükler (anahtar-değer yapıları)
 - [x] Hata mesajlarının ve çıktının çok dilli olması
-- [ ] Modüller / dosya içe aktarma
+- [x] Standart kütüphane (metin, matematik, liste)
+- [x] Hata yakalama (`dene` / `yakala` / `fırlat`)
+- [x] Modüller / dosya içe aktarma
 - [ ] Daha fazla insan dili
-- [ ] Editör desteği (sözdizimi renklendirme)
+- [x] Editör desteği (VS Code sözdizimi renklendirme)
+- [x] İndirilebilir Windows `earth.exe`
+- [ ] Sınıflar / kullanıcı tanımlı türler
+- [ ] Dosya okuma ve yazma
+- [ ] Daha hızlı çalışma için bytecode derleyici

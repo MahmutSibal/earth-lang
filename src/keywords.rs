@@ -238,4 +238,19 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn editor_grammar_knows_every_spelling() {
+        let grammar = include_str!("../editors/vscode/syntaxes/earth.tmLanguage.json");
+        let keyword_spellings = KEYWORDS.iter().map(|(_, spellings)| spellings);
+        let builtin_spellings = BUILTINS.iter().map(|(_, spellings)| spellings);
+        for columns in keyword_spellings.chain(builtin_spellings) {
+            for spelling in columns.iter().flat_map(|column| column.iter()) {
+                assert!(
+                    grammar.contains(spelling),
+                    "'{spelling}' is missing from the editor grammar; run editors/vscode/gen_grammar.py"
+                );
+            }
+        }
+    }
 }
