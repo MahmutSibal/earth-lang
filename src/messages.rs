@@ -468,8 +468,15 @@ pub mod cli {
 
     pub fn repl_banner(lang: Lang, version: &str) -> String {
         match lang {
-            Lang::Tr => format!("Earth {version} — çıkmak için Ctrl+D"),
-            Lang::En => format!("Earth {version} — press Ctrl+D to exit"),
+            Lang::Tr => format!("Earth {version} — çıkmak için 'çık' yazın"),
+            Lang::En => format!("Earth {version} — type 'exit' to quit"),
+        }
+    }
+
+    pub fn press_enter(lang: Lang) -> &'static str {
+        match lang {
+            Lang::Tr => "Kapatmak için Enter'a basın...",
+            Lang::En => "Press Enter to close...",
         }
     }
 

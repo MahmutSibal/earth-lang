@@ -29,13 +29,28 @@ function fib(n) {
 print(fib(20))
 ```
 
-## Kurulum ve kullanım
+## İndir ve kullan
+
+Rust kurmaya gerek yok. [Releases](https://github.com/MahmutSibal/earth-lang/releases)
+sayfasından işletim sisteminize uygun dosyayı indirin:
+
+- **Windows:** `earth-windows-x64.zip` dosyasını açıp `earth.exe`'ye çift
+  tıklayın. Etkileşimli kabuk açılır. Bir programı çalıştırmak için:
+  `earth.exe program.earth`. `.earth` dosyalarını "Birlikte aç" ile
+  `earth.exe`'ye bağlarsanız çift tıklayarak çalıştırabilirsiniz.
+- **Linux / macOS:** arşivi açın ve `./earth program.earth` çalıştırın.
+
+Program dosyalarını UTF-8 olarak kaydedin. Windows SmartScreen imzasız
+programlar için "tanınmayan uygulama" uyarısı gösterebilir; "Ek bilgi" →
+"Yine de çalıştır" ile açılır.
+
+## Kaynaktan derleme
 
 [Rust](https://www.rust-lang.org/tools/install) kurun, sonra:
 
 ```bash
 cargo run -- examples/fizzbuzz.earth   # bir dosya çalıştır
-cargo run                              # etkileşimli kabuk (REPL)
+cargo run                              # etkileşimli kabuk (REPL), çıkmak için: çık
 ```
 
 Derlenmiş ikili dosyayı doğrudan da kullanabilirsiniz:
@@ -44,6 +59,18 @@ Derlenmiş ikili dosyayı doğrudan da kullanabilirsiniz:
 cargo build --release
 target/release/earth examples/liste.earth
 ```
+
+Linux'tan Windows için `earth.exe` üretmek (MinGW-w64 gerekir):
+
+```bash
+sudo apt install gcc-mingw-w64-x86-64
+rustup target add x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-gnu
+```
+
+Yeni bir sürüm yayınlamak için bir etiket gönderin
+(`git tag v0.2.0 && git push origin v0.2.0`). `release` workflow'u
+Windows, Linux ve macOS arşivlerini Releases sayfasına ekler.
 
 Kontroller:
 

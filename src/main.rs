@@ -31,9 +31,39 @@ fn start() -> i32 {
         Err(code) => return code,
     };
     match options.path {
-        Some(path) => run_file(&path, options.lang),
+        Some(path) => {
+            let code = run_file(&path, options.lang);
+            if owns_console() {
+                // Opened by double-clicking a file: keep the window open so
+                // the output can be read.
+                println!();
+                print!("{}", cli::press_enter(options.lang.unwrap_or_default()));
+                let _ = io::stdout().flush();
+                let _ = io::stdin().read_line(&mut String::new());
+            }
+            code
+        }
         None => repl(options.lang.unwrap_or_default()),
     }
+}
+
+/// True when Earth was started from Explorer rather than a terminal, so the
+/// console window closes as soon as Earth exits.
+#[cfg(windows)]
+fn owns_console() -> bool {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetConsoleProcessList(process_list: *mut u32, count: u32) -> u32;
+    }
+    let mut processes = [0u32; 2];
+    // SAFETY: the buffer is valid for `processes.len()` entries.
+    let attached = unsafe { GetConsoleProcessList(processes.as_mut_ptr(), processes.len() as u32) };
+    attached == 1
+}
+
+#[cfg(not(windows))]
+fn owns_console() -> bool {
+    false
 }
 
 /// Returns `Ok(None)` when the program should exit successfully, such as
@@ -159,6 +189,13 @@ fn repl(lang: Lang) -> i32 {
             }
         }
 
+        if buffer.trim().is_empty() {
+            buffer.clear();
+            continue;
+        }
+        if matches!(buffer.trim(), "çık" | "cik" | "exit" | "quit") {
+            return 0;
+        }
         if is_incomplete(&buffer) {
             continue;
         }
