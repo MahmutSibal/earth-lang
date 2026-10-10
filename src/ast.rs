@@ -112,6 +112,16 @@ pub enum Stmt {
     },
     Function(Rc<FunctionDecl>),
     Return(Option<Expr>),
+    Try {
+        body: Vec<Stmt>,
+        /// The variable that receives the error, if the handler names one.
+        variable: Option<String>,
+        handler: Vec<Stmt>,
+    },
+    Throw {
+        value: Expr,
+        position: Position,
+    },
     Break,
     Continue,
 }

@@ -195,6 +195,31 @@ impl<'io> Interpreter<'io> {
                 };
                 return Ok(Flow::Return(value));
             }
+            Stmt::Try {
+                body,
+                variable,
+                handler,
+            } => {
+                let error = match self.execute_block(body, &Scope::new_child(env)) {
+                    Ok(flow) => return Ok(flow),
+                    Err(error) => error,
+                };
+                let scope = Scope::new_child(env);
+                if let Some(variable) = variable {
+                    // A thrown value is caught as is; Earth's own errors
+                    // become their message, in the program's language.
+                    let caught = match error.message {
+                        Message::Thrown(value) => value,
+                        message => Value::string(message.render(self.lang)),
+                    };
+                    scope.borrow_mut().define(variable.clone(), caught);
+                }
+                return self.execute_block(handler, &scope);
+            }
+            Stmt::Throw { value, position } => {
+                let value = self.evaluate(value, env)?;
+                return Err(Error::at(*position, Message::Thrown(value)));
+            }
             Stmt::Break => return Ok(Flow::Break),
             Stmt::Continue => return Ok(Flow::Continue),
         }

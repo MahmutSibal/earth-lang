@@ -4,7 +4,7 @@
 //! they are shown, so the same error can be reported in any [`Lang`].
 
 use crate::keywords::{Builtin, Keyword, Lang};
-use crate::value::format_number;
+use crate::value::{format_number, Value};
 
 /// The kind of a value, as reported by `tür` and in type errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,6 +171,8 @@ pub enum Message {
     RangeStepZero,
     RangeTooLong(usize),
     Io(String),
+    /// A value thrown with `fırlat` that nothing caught.
+    Thrown(Value),
 }
 
 impl Message {
@@ -296,6 +298,7 @@ impl Message {
                 Builtin::Range.name(lang)
             ),
             Message::Io(error) => format!("G/Ç hatası: {error}"),
+            Message::Thrown(value) => format!("Yakalanmamış hata: {}", value.display(lang)),
         }
     }
 
@@ -419,6 +422,7 @@ impl Message {
                 Builtin::Range.name(lang)
             ),
             Message::Io(error) => format!("I/O error: {error}"),
+            Message::Thrown(value) => format!("Uncaught error: {}", value.display(lang)),
         }
     }
 }

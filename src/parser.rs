@@ -44,6 +44,11 @@ impl Parser<'_> {
             TokenKind::Keyword(Keyword::While) => self.while_statement(),
             TokenKind::Keyword(Keyword::For) => self.for_statement(token.position),
             TokenKind::Keyword(Keyword::Function) => self.function_statement(),
+            TokenKind::Keyword(Keyword::Try) => self.try_statement(),
+            TokenKind::Keyword(Keyword::Throw) => Ok(Stmt::Throw {
+                value: self.expression()?,
+                position: token.position,
+            }),
             TokenKind::Keyword(Keyword::Return) => {
                 if self.function_depth == 0 {
                     return Err(Error::at(
@@ -102,6 +107,26 @@ impl Parser<'_> {
             condition,
             then_branch,
             else_branch,
+        })
+    }
+
+    fn try_statement(&mut self) -> Result<Stmt, Error> {
+        let body = self.block()?;
+        self.skip_separators();
+        self.expect(TokenKind::Keyword(Keyword::Catch))?;
+        let variable = match &self.peek().kind {
+            TokenKind::Identifier(name) => {
+                let name = name.clone();
+                self.advance();
+                Some(name)
+            }
+            _ => None,
+        };
+        let handler = self.block()?;
+        Ok(Stmt::Try {
+            body,
+            variable,
+            handler,
         })
     }
 

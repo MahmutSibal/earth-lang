@@ -52,6 +52,9 @@ pub enum Keyword {
     Not,
     Break,
     Continue,
+    Try,
+    Catch,
+    Throw,
 }
 
 /// Turkish also accepts ASCII-only spellings for keyboards without Turkish
@@ -73,6 +76,9 @@ const KEYWORDS: &[(Keyword, Spellings)] = &[
     (Keyword::Not, [&["değil", "degil"], &["not"]]),
     (Keyword::Break, [&["kır", "kir"], &["break"]]),
     (Keyword::Continue, [&["devam"], &["continue"]]),
+    (Keyword::Try, [&["dene"], &["try"]]),
+    (Keyword::Catch, [&["yakala"], &["catch"]]),
+    (Keyword::Throw, [&["fırlat", "firlat"], &["throw"]]),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

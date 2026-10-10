@@ -185,10 +185,14 @@ yaz(liste, uzunluk(liste), liste[-1])";
         // Debug builds use a lot of stack per Earth call; give the test room.
         let handle = std::thread::Builder::new()
             .stack_size(256 * 1024 * 1024)
-            .spawn(|| run("fonksiyon f() { f() }\nf()").unwrap_err())
+            .spawn(|| {
+                run("fonksiyon f() { f() }\nf()")
+                    .unwrap_err()
+                    .text(Lang::Tr)
+            })
             .unwrap();
-        let error = handle.join().unwrap();
-        assert!(error.text(Lang::Tr).starts_with("Çok derin özyineleme"));
+        let message = handle.join().unwrap();
+        assert!(message.starts_with("Çok derin özyineleme"));
     }
 
     #[test]
@@ -349,5 +353,52 @@ yaz(k >= 0 ve k < 1)";
             run_error("print(upper(1))").text(Lang::En),
             "'upper' expects string, got number"
         );
+    }
+
+    #[test]
+    fn catches_thrown_values_and_runtime_errors() {
+        let source = "\
+fonksiyon böl_güvenli(a, b) {
+    eğer b == 0 { fırlat {\"kod\": 1, \"mesaj\": \"sıfır\"} }
+    döndür a / b
+}
+dene {
+    yaz(böl_güvenli(1, 0))
+    yaz(\"buraya gelinmez\")
+} yakala h {
+    yaz(\"yakalandı:\", h[\"mesaj\"])
+}
+dene { yaz([1][5]) } yakala h { yaz(h) }
+dene { fırlat \"x\" } yakala { yaz(\"değişkensiz\") }
+yaz(\"devam\")";
+        assert_eq!(
+            run(source).unwrap(),
+            "yakalandı: sıfır\nİndeks 5 sınırların dışında (uzunluk 1)\ndeğişkensiz\ndevam\n"
+        );
+    }
+
+    #[test]
+    fn catches_in_english_and_reports_uncaught_errors() {
+        assert_eq!(
+            run("try {\n  print(1 / 0)\n}\ncatch e {\n  print(\"caught:\", e)\n}").unwrap(),
+            "caught: Division by zero\n"
+        );
+        let error = run_error("throw [1, true]");
+        assert_eq!(error.render(Lang::En), "1:1: Uncaught error: [1, true]");
+        assert_eq!(error.text(Lang::Tr), "Yakalanmamış hata: [1, doğru]");
+    }
+
+    #[test]
+    fn lets_control_flow_pass_through_try() {
+        let source = "\
+fonksiyon ilk_çift(liste) {
+    her x içinde liste {
+        dene {
+            eğer x % 2 == 0 { döndür x }
+        } yakala { }
+    }
+}
+yaz(ilk_çift([1, 3, 4, 5]))";
+        assert_eq!(run(source).unwrap(), "4\n");
     }
 }
