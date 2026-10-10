@@ -49,92 +49,75 @@ kod editörü, altta programın çıktısının göründüğü terminal.
   Kaydedilmemiş değişiklikler kapatırken sorulur.
 - **Arayüz dili:** Türkçe ya da İngilizce.
 
-Windows'ta kurulumdan sonra Başlat menüsünden **Earth Studio** ile açılır;
-`.earth` dosyalarına çift tıklamak da onları Studio'da açar.
-Kaynaktan çalıştırmak için: `cargo run -p earth-studio`.
+Örnek programlar Studio'nun içinde gelir: ilk açılışta `Belgeler\Earth`
+klasörü oluşturulur ve örnekler `Belgeler\Earth\Örnekler` altına konur.
+**📚 Örnekler** düğmesi onları istediğiniz zaman geri getirir.
 
 ## Kurulum
 
-Rust kurmaya gerek yok.
+Rust ya da başka bir şey kurmaya gerek yok.
 
-### Windows (önerilen)
+### Windows
 
-PowerShell'i açın ve şunu yapıştırın:
+[Releases](https://github.com/MahmutSibal/earth-lang/releases/latest)
+sayfasından **`EarthStudio-Kurulum.exe`** dosyasını indirip çalıştırın:
+
+1. Hoş geldin ekranı
+2. Kurulum klasörü (varsayılan: `%LOCALAPPDATA%\Programs\Earth Studio`;
+   yönetici izni gerekmez)
+3. Masaüstü kısayolu seçeneği
+4. İlerleme çubuğuyla kurulum
+5. "Earth Studio'yu çalıştır" ile bitiş
+
+Kurulum klasöründe yalnızca `earth-studio.exe` ve kaldırıcı bulunur; dil,
+yorumlayıcı ve örnekler programın içine gömülüdür. `.earth` dosyalarına çift
+tıklamak onları Earth Studio'da açar. Kaldırmak için: **Ayarlar → Uygulamalar
+→ Earth Studio**.
+
+**Tek satırla kurulum (önerilen):** PowerShell'e şunu yapıştırın. Aynı
+kurulumu indirir, SHA-256 özetini doğrular ve çalıştırır. Bu yolla
+indirilen dosyalar Windows SmartScreen uyarısı göstermez.
 
 ```powershell
 irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1 | iex
 ```
 
-[Kurulum betiği](install.ps1) şunları yapar:
+Kurulum dosyası henüz dijital olarak imzalı değil. Bu yüzden tarayıcıdan
+indirilip açıldığında Windows "bilinmeyen yayımcı" uyarısı gösterebilir. Bu,
+imzasız her yeni program için görülen bir uyarıdır ve programın zararlı olduğu
+anlamına gelmez. Dosyayı aynı sayfadaki `SHA256SUMS.txt` ile
+`Get-FileHash EarthStudio-Kurulum.exe` komutuyla doğrulayabilirsiniz. İmzalama
+planı için [docs/imzalama.md](docs/imzalama.md) dosyasına bakın.
 
-- En son sürümü indirir ve SHA-256 özetini doğrular.
-- `%LOCALAPPDATA%\Programs\Earth` klasörüne kurar; yönetici izni istemez.
-- Başlat menüsüne **Earth Studio** kısayolunu ekler.
-- PATH'e ekler: yeni bir terminalde `earth` yazmak yeterli olur.
-- `.earth` dosyalarını bağlar: çift tıklayınca Studio'da açılır, sağ tık
-  menüsündeki **Earth ile çalıştır** ile doğrudan çalışır.
+### Linux ve macOS
 
-Bu yolla kurulan dosyalar Windows SmartScreen uyarısı göstermez.
-
-Kaldırmak için:
-
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1))) -Uninstall
-```
-
-### Elle indirme
-
-[Releases](https://github.com/MahmutSibal/earth-lang/releases) sayfasından
-işletim sisteminize uygun arşivi indirin:
-
-- Windows: `earth-windows-x64.zip`
-- Linux: `earth-linux-x64.tar.gz`
-- macOS: `earth-macos-arm64.tar.gz`
-
-Dosyanın değiştirilmediğini, aynı sayfadaki `SHA256SUMS.txt` ile
-karşılaştırarak doğrulayabilirsiniz:
-
-```powershell
-Get-FileHash earth-windows-x64.zip   # Windows
-```
-
-```bash
-sha256sum -c SHA256SUMS.txt --ignore-missing   # Linux / macOS
-```
-
-`earth.exe` henüz dijital olarak imzalı değil. Bu yüzden tarayıcıdan indirilip
-açıldığında Windows "bilinmeyen yayımcı" uyarısı gösterebilir. Bu, imzasız her
-yeni program için görülen bir uyarıdır ve programın zararlı olduğu anlamına
-gelmez. Kaynak kodu bu depodadır ve herkes kendi exe'sini derleyebilir.
-İmzalama planı için [docs/imzalama.md](docs/imzalama.md) dosyasına bakın.
+Releases sayfasındaki `earth-studio-linux-x64.tar.gz` ya da
+`earth-studio-macos-arm64.tar.gz` arşivini açıp `earth-studio` programını
+çalıştırın.
 
 ## Kaynaktan derleme
 
 [Rust](https://www.rust-lang.org/tools/install) kurun, sonra:
 
 ```bash
-cargo run -- examples/fizzbuzz.earth   # bir dosya çalıştır
-cargo run                              # etkileşimli kabuk (REPL), çıkmak için: çık
+cargo run -p earth-studio                      # Earth Studio'yu aç
+cargo run -p earth-studio -- examples/fizzbuzz.earth
 ```
 
-Derlenmiş ikili dosyayı doğrudan da kullanabilirsiniz:
+Windows kurulum dosyasını Linux'ta üretmek (MinGW-w64, Wine ve Wine altında
+kurulu [Inno Setup](https://jrsoftware.org/isinfo.php) gerekir):
 
 ```bash
-cargo build --release
-target/release/earth examples/liste.earth
-```
-
-Linux'tan Windows için `earth.exe` üretmek (MinGW-w64 gerekir):
-
-```bash
-sudo apt install gcc-mingw-w64-x86-64
 rustup target add x86_64-pc-windows-gnu
-cargo build --release --workspace --target x86_64-pc-windows-gnu
+cargo build --release -p earth-studio --target x86_64-pc-windows-gnu
+cd windows && wine 'C:\InnoSetup\ISCC.exe' /DAppVersion=0.5.0 \
+  '/DStudioExe=..\target\x86_64-pc-windows-gnu\release\earth-studio.exe' installer.iss
 ```
 
-Yeni bir sürüm yayınlamak için bir etiket gönderin
-(`git tag v0.2.0 && git push origin v0.2.0`). `release` workflow'u
-Windows, Linux ve macOS arşivlerini Releases sayfasına ekler.
+Sonuç `windows/Output/EarthStudio-Kurulum.exe` olur. Yeni bir sürüm
+yayınlamak için bir etiket gönderin (`git tag v0.5.0 && git push origin
+v0.5.0`); `release` workflow'u kurulum dosyasını, Linux/macOS arşivlerini ve
+`SHA256SUMS.txt`'yi Releases sayfasına ekler.
 
 Kontroller:
 
@@ -306,22 +289,16 @@ kopyalanır. Modüldeki bir hata, modül dosyasının adı ve satırıyla göste
 Earth, programın hangi dilde yazıldığını anahtar kelimelerinden anlar ve o
 dilde cevap verir. İngilizce yazılmış bir program `true`, `nil` ve İngilizce
 hata mesajları görür; Türkçe yazılmış bir program `doğru`, `boş` ve Türkçe
-hata mesajları görür. Bu davranış `--dil` (veya `--lang`) ile değiştirilebilir:
-
-```bash
-earth --dil en program.earth
-earth --lang tr program.earth
-```
+hata mesajları görür. Earth Studio'nun durum çubuğu, açık dosyanın hangi
+dilde algılandığını gösterir.
 
 ### Hata mesajları
 
-Hatalar dosya, satır ve sütun bilgisiyle birlikte gösterilir:
+Hatalar satır ve sütun bilgisiyle Earth Studio'nun terminalinde gösterilir;
+hatalı satır editörde kırmızıyla işaretlenir:
 
 ```text
-Earth hatası: program.earth:2:14: '*' işlemi 'metin' ve 'sayı' türleri arasında yapılamaz
-  |
-2 | yaz(x +  "a" * 2)
-  |              ^
+✖ Hata: program.earth:2:14: '*' işlemi 'metin' ve 'sayı' türleri arasında yapılamaz
 ```
 
 ## Editör desteği
@@ -342,7 +319,6 @@ bakın.
 - **`src/interpreter.rs`, `src/value.rs`:** ağaç gezen yorumlayıcı, değerler,
   kapsamlar, hata yakalama ve modüller.
 - **`src/stdlib.rs`:** girdi/çıktı dışındaki yerleşik fonksiyonlar.
-- **`src/main.rs`:** dosya çalıştırıcı, hata raporlama ve REPL.
 - **`studio/`:** Earth Studio editörü (egui). Programları ayrı bir iş
   parçacığında çalıştırır ve yorumlayıcının `set_interrupt` desteğiyle
   durdurur. Dil çekirdeği (`src/`) bağımlılıksız kalır; grafik
@@ -362,7 +338,7 @@ komutları çalıştırın:
 where cl
 where link
 cargo test
-cargo run -- examples\hello.earth
+cargo run -p earth-studio
 ```
 
 ## Katkı rehberi
@@ -408,7 +384,7 @@ Her `examples/*.earth` dosyası `tests/examples.rs` tarafından çalıştırıl�
 - [x] Modüller / dosya içe aktarma
 - [ ] Daha fazla insan dili
 - [x] Editör desteği (VS Code sözdizimi renklendirme)
-- [x] İndirilebilir Windows `earth.exe`
+- [x] Windows kurulum programı (hoş geldin ekranı, masaüstü kısayolu, kaldırıcı)
 - [x] Earth Studio: gezgin, sekmeli editör ve terminal içeren editör
 - [ ] Sınıflar / kullanıcı tanımlı türler
 - [ ] Dosya okuma ve yazma
