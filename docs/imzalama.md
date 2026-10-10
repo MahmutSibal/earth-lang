@@ -1,9 +1,10 @@
-# earth.exe'yi imzalamak
+# Earth Studio'yu imzalamak
 
 Windows, internetten indirilen ve **dijital imzası olmayan** programlar için
 SmartScreen uyarısı ("Windows bilgisayarınızı korudu") gösterir. Uyarıda
 yayıncı "Bilinmeyen yayımcı" olarak görünür. Bu uyarıyı kalıcı olarak
-kaldırmanın yolu `earth.exe`'yi bir kod imzalama sertifikasıyla imzalamaktır.
+kaldırmanın yolu `earth-studio.exe`'yi ve `EarthStudio-Kurulum.exe`'yi bir kod
+imzalama sertifikasıyla imzalamaktır.
 
 İmza, dosyanın kimden geldiğini ve sonradan değiştirilmediğini kanıtlar.
 Sertifika, kimliği doğrulanmış bir kişiye veya kuruluşa verilir; bu yüzden
@@ -20,7 +21,7 @@ başvuruyu proje sahibinin kendisi yapmalıdır.
 ## Azure Artifact Signing ile otomatik imzalama
 
 `.github/workflows/release.yml`, aşağıdaki depo gizli değerleri
-(Settings → Secrets and variables → Actions) tanımlandığında `earth.exe`'yi
+(Settings → Secrets and variables → Actions) tanımlandığında `earth-studio.exe`'yi ve kurulum dosyasını
 her sürümde otomatik olarak imzalar. Tanımlı değillerse imzalama adımı atlanır.
 
 | Gizli değer | Açıklama |
@@ -40,7 +41,7 @@ her sürümde otomatik olarak imzalar. Tanımlı değillerse imzalama adımı at
   "internetten indirildi" işareti almadığı için SmartScreen uyarısı çıkmaz.
   Betik açık kaynaktır ve indirdiği dosyayı SHA-256 ile doğrular.
 - **SHA-256 özetleri:** her sürümde `SHA256SUMS.txt` yayınlanır. Elle
-  indirenler `Get-FileHash earth-windows-x64.zip` ile karşılaştırabilir.
+  indirenler `Get-FileHash EarthStudio-Kurulum.exe` ile karşılaştırabilir.
 - **Kaynaktan derleme:** kod açık olduğu için herkes `cargo build --release`
   ile kendi exe'sini üretebilir.
 - **İtibar:** imzasız bir dosya bile zamanla çok kişi tarafından

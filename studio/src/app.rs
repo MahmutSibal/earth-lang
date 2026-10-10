@@ -14,6 +14,7 @@ use crate::files::{self, Node};
 use crate::highlight::{self, DARK};
 use crate::runner::{Event, Runner};
 use crate::texts::{texts, Texts};
+use crate::workspace;
 
 /// Older terminal output is dropped beyond this many characters.
 const TERMINAL_LIMIT: usize = 200_000;
@@ -128,7 +129,13 @@ impl StudioApp {
                 }
                 app.open_file(&path);
             }
-            None => {}
+            // Started from the Start menu or desktop: open the user's Earth
+            // folder, created with the examples on first run.
+            None => {
+                if let Some(folder) = workspace::prepare_earth_folder() {
+                    app.open_folder(folder);
+                }
+            }
         }
         if app.documents.is_empty() {
             let welcome = texts(lang).welcome.to_owned();
@@ -191,6 +198,22 @@ impl StudioApp {
                     self.texts().could_not_open,
                     path.display()
                 ));
+            }
+        }
+    }
+
+    /// Writes the built-in examples into the Earth folder and opens it.
+    fn show_examples(&mut self) {
+        let Some(folder) = workspace::earth_folder() else {
+            return;
+        };
+        match workspace::write_examples(&folder) {
+            Ok(examples) => {
+                self.open_folder(folder);
+                self.open_file(&examples.join(workspace::EXAMPLES[0].0));
+            }
+            Err(error) => {
+                self.status = Some(format!("{}: {error}", self.texts().could_not_save));
             }
         }
     }
@@ -426,6 +449,9 @@ impl StudioApp {
                 if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                     self.open_folder(folder);
                 }
+            }
+            if ui.button(texts.examples).clicked() {
+                self.show_examples();
             }
             if ui
                 .button(texts.new_file)

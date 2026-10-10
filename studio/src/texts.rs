@@ -4,6 +4,7 @@ use earth::Lang;
 
 pub struct Texts {
     pub open_folder: &'static str,
+    pub examples: &'static str,
     pub new_file: &'static str,
     pub save: &'static str,
     pub run: &'static str,
@@ -43,6 +44,7 @@ pub struct Texts {
 
 const TURKISH: Texts = Texts {
     open_folder: "📂 Klasör Aç",
+    examples: "📚 Örnekler",
     new_file: "📄 Yeni",
     save: "💾 Kaydet",
     run: "▶ Çalıştır",
@@ -82,6 +84,7 @@ const TURKISH: Texts = Texts {
 
 const ENGLISH: Texts = Texts {
     open_folder: "📂 Open Folder",
+    examples: "📚 Examples",
     new_file: "📄 New",
     save: "💾 Save",
     run: "▶ Run",
