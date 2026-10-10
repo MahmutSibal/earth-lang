@@ -1,0 +1,12 @@
+# FizzBuzz — Türkçe anahtar kelimelerle
+her sayı içinde aralık(1, 16) {
+    eğer sayı % 15 == 0 {
+        yaz("FizzBuzz")
+    } değilse eğer sayı % 3 == 0 {
+        yaz("Fizz")
+    } değilse eğer sayı % 5 == 0 {
+        yaz("Buzz")
+    } değilse {
+        yaz(sayı)
+    }
+}

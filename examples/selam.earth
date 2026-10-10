@@ -1,0 +1,6 @@
+# Kullanıcıdan girdi okuma
+değişken ad = girdi("Adın ne? ")
+eğer ad == boş veya ad == "" {
+    ad = "Dünya"
+}
+yaz("Merhaba, " + ad + "!")

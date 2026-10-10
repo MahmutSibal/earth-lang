@@ -1,0 +1,11 @@
+# Fibonacci — the same language with English keywords
+function fib(n) {
+    if n < 2 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+
+let numbers = []
+for i in range(10) {
+    push(numbers, fib(i))
+}
+print("First ten:", numbers)

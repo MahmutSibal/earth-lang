@@ -1,0 +1,27 @@
+# Listeler, fonksiyonlar ve kapanışlar (closure)
+değişken notlar = [72, 95, 58, 88]
+
+fonksiyon ortalama(liste) {
+    değişken toplam = 0
+    her n içinde liste {
+        toplam = toplam + n
+    }
+    döndür toplam / uzunluk(liste)
+}
+
+fonksiyon eşik_kontrolü(eşik) {
+    fonksiyon geçti_mi(puan) {
+        döndür puan >= eşik
+    }
+    döndür geçti_mi
+}
+
+değişken geçti_mi = eşik_kontrolü(60)
+yaz("Ortalama:", ortalama(notlar))
+her puan içinde notlar {
+    eğer geçti_mi(puan) {
+        yaz(puan, "→ geçti")
+    } değilse {
+        yaz(puan, "→ kaldı")
+    }
+}
