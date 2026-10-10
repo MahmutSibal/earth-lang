@@ -1,0 +1,16 @@
+[package]
+name = "earth"
+version = "0.1.0"
+edition = "2021"
+description = "Earth — Kendi Dünyan, Kendi Kodlaman"
+license = "MIT"
+
+[[bin]]
+name = "earth"
+path = "src/main.rs"
+
+[lib]
+name = "earth"
+path = "src/lib.rs"
+
+[dependencies]
