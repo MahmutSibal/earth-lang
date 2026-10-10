@@ -7,7 +7,9 @@
     - En son sürümü GitHub Releases'tan indirir ve SHA-256 özetini doğrular.
     - %LOCALAPPDATA%\Programs\Earth klasörüne kurar.
     - Kullanıcı PATH'ine ekler: yeni bir terminalde `earth` yazmak yeterli olur.
-    - .earth dosyalarını Earth ile ilişkilendirir (çift tıklayınca çalışır).
+    - Başlat menüsüne "Earth Studio" kısayolunu ekler.
+    - .earth dosyalarını ilişkilendirir: çift tıklayınca Earth Studio'da açılır,
+      sağ tık menüsünden doğrudan çalıştırılabilir.
 
     Kurulum / Install:
         irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1 | iex
@@ -47,15 +49,35 @@ function Get-UserPath {
     return $path
 }
 
-function Set-FileAssociation([string]$Exe) {
+# Double-clicking a .earth file opens it in Earth Studio (when installed);
+# the right-click menu also offers running it directly with earth.exe.
+function Set-FileAssociation([string]$Earth, [string]$Studio) {
     $classes = "HKCU:\Software\Classes"
+    $editor = if ($Studio -and (Test-Path $Studio)) { $Studio } else { $Earth }
+    $runLabel = if ($Turkish) { "Earth ile çalıştır" } else { "Run with Earth" }
     New-Item -Path "$classes\.earth" -Force | Out-Null
     Set-ItemProperty -Path "$classes\.earth" -Name "(default)" -Value "Earth.Program"
     New-Item -Path "$classes\Earth.Program\DefaultIcon" -Force | Out-Null
     Set-ItemProperty -Path "$classes\Earth.Program" -Name "(default)" -Value "Earth"
-    Set-ItemProperty -Path "$classes\Earth.Program\DefaultIcon" -Name "(default)" -Value "`"$Exe`",0"
+    Set-ItemProperty -Path "$classes\Earth.Program\DefaultIcon" -Name "(default)" -Value "`"$Earth`",0"
     New-Item -Path "$classes\Earth.Program\shell\open\command" -Force | Out-Null
-    Set-ItemProperty -Path "$classes\Earth.Program\shell\open\command" -Name "(default)" -Value "`"$Exe`" `"%1`""
+    Set-ItemProperty -Path "$classes\Earth.Program\shell\open\command" -Name "(default)" -Value "`"$editor`" `"%1`""
+    New-Item -Path "$classes\Earth.Program\shell\run\command" -Force | Out-Null
+    Set-ItemProperty -Path "$classes\Earth.Program\shell\run" -Name "(default)" -Value $runLabel
+    Set-ItemProperty -Path "$classes\Earth.Program\shell\run\command" -Name "(default)" -Value "`"$Earth`" `"%1`""
+}
+
+function Get-ShortcutPath {
+    Join-Path ([Environment]::GetFolderPath("Programs")) "Earth Studio.lnk"
+}
+
+function Set-StartMenuShortcut([string]$Studio) {
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut((Get-ShortcutPath))
+    $shortcut.TargetPath = $Studio
+    $shortcut.WorkingDirectory = [Environment]::GetFolderPath("MyDocuments")
+    $shortcut.Description = "Earth Studio"
+    $shortcut.Save()
 }
 
 function Remove-FileAssociation {
@@ -69,6 +91,7 @@ if ($Uninstall) {
         $remaining = (Get-UserPath).Split(";") | Where-Object { $_ -and ($_.TrimEnd("\") -ne $InstallDir.TrimEnd("\")) }
         [Environment]::SetEnvironmentVariable("Path", ($remaining -join ";"), "User")
         Remove-FileAssociation
+        Remove-Item -Path (Get-ShortcutPath) -Force -ErrorAction SilentlyContinue
     }
     Say "Earth kaldırıldı." "Earth was uninstalled."
     return
@@ -136,12 +159,17 @@ try {
             [Environment]::SetEnvironmentVariable("Path", (($entries + $InstallDir) -join ";"), "User")
         }
         if (-not (($env:Path.Split(";")) -contains $InstallDir)) { $env:Path = "$env:Path;$InstallDir" }
-        Set-FileAssociation $installed
+        $studio = Join-Path $InstallDir "earth-studio.exe"
+        Set-FileAssociation $installed $studio
+        if (Test-Path $studio) { Set-StartMenuShortcut $studio }
     }
 
     Say "" ""
     Say "Earth kuruldu: $installed" "Earth was installed: $installed"
-    Say "Yeni bir terminal açıp 'earth' yazın ya da bir .earth dosyasına çift tıklayın." "Open a new terminal and type 'earth', or double-click a .earth file."
+    if (Test-Path (Join-Path $InstallDir "earth-studio.exe")) {
+        Say "Başlat menüsünden 'Earth Studio'yu açın ya da bir .earth dosyasına çift tıklayın." "Open 'Earth Studio' from the Start menu, or double-click a .earth file."
+    }
+    Say "Terminalde kullanmak için yeni bir terminal açıp 'earth' yazın." "To use it in a terminal, open a new terminal and type 'earth'."
 } finally {
     Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
 }
