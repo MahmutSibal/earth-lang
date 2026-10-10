@@ -2,206 +2,570 @@
   <img src="docs/logo.png" alt="Earth" width="320">
 </p>
 
-# Earth — Kendi Dünyan, Kendi Kodlaman
+<h1 align="center">Earth — Kendi Dünyan, Kendi Kodlaman</h1>
 
-Earth, anahtar kelimeleri birden fazla insan dilinde yazılabilen küçük bir
-programlama dilidir. Şu an Türkçe ve İngilizce destekleniyor ve ikisi aynı
-programda bile karıştırılabilir.
+<p align="center">
+  <a href="https://github.com/MahmutSibal/earth-lang/releases/latest"><img alt="Son sürüm" src="https://img.shields.io/github/v/release/MahmutSibal/earth-lang?label=s%C3%BCr%C3%BCm"></a>
+  <a href="https://github.com/MahmutSibal/earth-lang/releases"><img alt="İndirme" src="https://img.shields.io/github/downloads/MahmutSibal/earth-lang/total?label=indirme"></a>
+  <a href="LICENSE"><img alt="Lisans: MIT" src="https://img.shields.io/badge/lisans-MIT-blue"></a>
+</p>
 
-*Earth is a small multilingual programming language: every keyword and
-built-in has Turkish and English spellings that mean exactly the same thing.*
+Earth, **Türkçe ya da İngilizce yazılabilen** bir programlama dilidir. Her
+anahtar kelimenin ve her yerleşik fonksiyonun Türkçe ve İngilizce yazımı
+vardır; ikisi aynı anlama gelir, hatta aynı programda karıştırılabilir. Earth,
+kendi editörü **Earth Studio** ile gelir: dosya gezgini, renkli kod editörü ve
+programın çalıştığı terminal tek pencerede.
+
+*Earth is a programming language you can write in Turkish or English: every
+keyword and built-in has both spellings, and Earth answers in the language
+the program is written in. It ships with its own editor, Earth Studio.*
 
 ```earth
-# FizzBuzz
-her sayı içinde aralık(1, 16) {
-    eğer sayı % 15 == 0 {
-        yaz("FizzBuzz")
-    } değilse eğer sayı % 3 == 0 {
-        yaz("Fizz")
-    } değilse {
-        yaz(sayı)
-    }
+# Türkçe
+değişken ad = "Dünya"
+her i içinde aralık(1, 4) {
+    yaz(i, "Merhaba,", ad + "!")
 }
 ```
 
+```text
+1 Merhaba, Dünya!
+2 Merhaba, Dünya!
+3 Merhaba, Dünya!
+```
+
 ```earth
-# The same language in English
+# English: the very same language
 function fib(n) {
     if n < 2 { return n }
     return fib(n - 1) + fib(n - 2)
 }
-print(fib(20))
+print("fib(20) =", fib(20))
 ```
+
+```text
+fib(20) = 6765
+```
+
+## İçindekiler
+
+- [Neden Earth?](#neden-earth)
+- [Hızlı başlangıç](#hızlı-başlangıç)
+- [Earth Studio](#earth-studio)
+- [Dil öğreticisi](#dil-öğreticisi)
+  - [İlk program](#1-ilk-program) ·
+    [Değişkenler](#2-değişkenler) ·
+    [Veri türleri](#3-veri-türleri) ·
+    [İşlemler](#4-işlemler) ·
+    [Metinler](#5-metinler) ·
+    [Koşullar](#6-koşullar) ·
+    [Döngüler](#7-döngüler) ·
+    [Listeler](#8-listeler) ·
+    [Sözlükler](#9-sözlükler) ·
+    [Fonksiyonlar](#10-fonksiyonlar) ·
+    [Kullanıcıdan girdi](#11-kullanıcıdan-girdi) ·
+    [Hata yakalama](#12-hata-yakalama) ·
+    [Modüller](#13-modüller) ·
+    [Türkçe ve İngilizce](#14-türkçe-ve-i̇ngilizce) ·
+    [Sözdizimi kuralları](#15-sözdizimi-kuralları)
+- [Başvuru](#başvuru)
+  - [Anahtar kelimeler](#anahtar-kelimeler) ·
+    [Yerleşik fonksiyonlar](#yerleşik-fonksiyonlar) ·
+    [Hata mesajları](#sık-görülen-hata-mesajları)
+- [Örnek programlar](#örnek-programlar)
+- [Kurulum ayrıntıları](#kurulum-ayrıntıları)
+- [Sık sorulan sorular](#sık-sorulan-sorular)
+- [Geliştiriciler için](#geliştiriciler-için)
+- [Yol haritası](#yol-haritası)
+- [Lisans](#lisans)
+
+## Neden Earth?
+
+- **Ana dilinde programlama.** `eğer`, `iken`, `fonksiyon`, `yaz`… Programlamayı
+  öğrenirken İngilizceyle aynı anda boğuşmak zorunda değilsin. Hazır
+  olduğunda aynı programı `if`, `while`, `function`, `print` ile yazabilirsin.
+- **Anlaşılır hata mesajları.** Hatalar, programın yazıldığı dilde, satır ve
+  sütun bilgisiyle gösterilir; hatalı satır editörde kırmızıyla işaretlenir.
+- **Kurulumu kolay.** Tek bir kurulum dosyası; yönetici izni istemez, Rust ya
+  da başka bir araç gerektirmez. Yeni sürümler kendiliğinden gelir.
+- **Küçük ama eksiksiz.** Değişkenler, koşullar, döngüler, fonksiyonlar,
+  kapanışlar, listeler, sözlükler, hata yakalama, modüller ve 40'tan fazla
+  yerleşik fonksiyon.
+- **Açık kaynak.** Dil çekirdeği yalnızca Rust standart kütüphanesiyle yazılmış,
+  okunması kolay bir yorumlayıcıdır.
+
+## Hızlı başlangıç
+
+1. [Releases](https://github.com/MahmutSibal/earth-lang/releases/latest)
+   sayfasından **`EarthStudio-Kurulum.exe`** dosyasını indirip çalıştır. Ya da
+   PowerShell'e şunu yapıştır:
+
+   ```powershell
+   irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1 | iex
+   ```
+
+2. Masaüstündeki **Earth Studio** simgesiyle programı aç. İlk açılışta
+   `Belgeler\Earth` klasörü örnek programlarla birlikte hazırlanır.
+3. **📄 Yeni** ile boş bir dosya aç, şunu yaz ve **F5**'e bas:
+
+   ```earth
+   değişken ad = girdi("Adın ne? ")
+   yaz("Merhaba, " + ad + "!")
+   ```
+
+4. Terminal adını sorar; yazıp **Enter**'a bas. Program sana selam verir.
+   Kaydetmek için **Ctrl+S**.
 
 ## Earth Studio
 
-Earth kendi editörüyle gelir: solda dosya gezgini, ortada sekmeli ve renkli
-kod editörü, altta programın çıktısının göründüğü terminal.
-
 ![Earth Studio](docs/studio.png)
 
-- **▶ Çalıştır (F5):** programı çalıştırır. Çıktı terminalde anında görünür;
-  `girdi` terminale yazılanı okur.
-- **⏹ Durdur (Shift+F5):** sonsuz döngüye giren programı durdurur.
-- **Hata gösterimi:** hata veren satır editörde kırmızıyla işaretlenir.
-- **REPL:** program çalışmıyorken terminale Earth komutları yazılabilir.
-- **Dosya işlemleri:** klasör açma, yeni dosya, kaydetme (Ctrl+S).
-  Kaydedilmemiş değişiklikler kapatırken sorulur.
-- **Arayüz dili:** Türkçe ya da İngilizce.
+### Pencerenin bölümleri
 
-Örnek programlar Studio'nun içinde gelir: ilk açılışta `Belgeler\Earth`
-klasörü oluşturulur ve örnekler `Belgeler\Earth\Örnekler` altına konur.
-**📚 Örnekler** düğmesi onları istediğiniz zaman geri getirir.
+| Bölüm | Ne işe yarar |
+|---|---|
+| **Araç çubuğu** (üst) | 📂 Klasör Aç, 📚 Örnekler, 📄 Yeni, 💾 Kaydet, ▶ Çalıştır, ⏹ Durdur ve arayüz dili (Türkçe/English). |
+| **Gezgin** (sol) | Açık klasördeki dosyalar. Bir dosyaya tıklamak onu yeni bir sekmede açar. **+ Dosya** klasörde yeni bir `.earth` dosyası oluşturur, **⟳** listeyi yeniler. |
+| **Editör** (orta) | Sekmeli kod editörü: satır numaraları ve renklendirme. Kaydedilmemiş dosyanın sekmesinde `•` görünür. Hata veren satır kırmızıyla işaretlenir. |
+| **Terminal** (alt) | Programın çıktısı burada akar. Program `girdi` ile bir şey sorduğunda cevabı alttaki satıra yazarsın. Program çalışmıyorken aynı satır bir Earth komut satırıdır (REPL). Kenarından sürükleyerek büyütülebilir. |
+| **Durum çubuğu** (en alt) | Solda toplam indirme sayısı ve programın durumu (Hazır, Çalışıyor…, Girdi bekleniyor); sağda imlecin satır ve sütunu, dosyanın algılanan dili ve Studio'nun sürümü. |
 
-## Kurulum
+### Klavye kısayolları
 
-Rust ya da başka bir şey kurmaya gerek yok.
+| Kısayol | İşlem |
+|---|---|
+| **F5** | Açık dosyayı çalıştır |
+| **Shift+F5** | Çalışan programı durdur |
+| **Ctrl+S** | Kaydet (adsız dosyada nereye kaydedileceği sorulur) |
+| **Ctrl+N** | Yeni dosya |
+| **Enter** (terminalde) | Girdiyi gönder ya da REPL komutunu çalıştır |
+| **Tab** (editörde) | Girinti ekle |
 
-### Windows
+### Program çalıştırmak
 
-[Releases](https://github.com/MahmutSibal/earth-lang/releases/latest)
-sayfasından **`EarthStudio-Kurulum.exe`** dosyasını indirip çalıştırın:
+- **F5** açık sekmedeki programı çalıştırır. Diske kaydedilmiş olup değişen
+  dosyalar önce otomatik kaydedilir; böylece `içe_aktar` ile kullanılan
+  modüller her zaman güncel olur.
+- Çıktı terminalde anında görünür; uzun süren programlarda pencere donmaz.
+- Program `girdi(...)` çağırdığında durum çubuğunda **Girdi bekleniyor** yazar
+  ve imleç terminale geçer.
+- Sonsuz döngüye giren bir programı **⏹ Durdur** ya da **Shift+F5** keser.
+  Durdurma `dene`/`yakala` ile yakalanamaz.
+- Bir hata olursa terminalde kırmızıyla `✖ Hata: satır:sütun: mesaj` görünür
+  ve hatalı satır editörde işaretlenir. Hata içe aktarılan bir modüldeyse o
+  dosya açılır.
 
-1. Hoş geldin ekranı
-2. Kurulum klasörü (varsayılan: `%LOCALAPPDATA%\Programs\Earth Studio`;
-   yönetici izni gerekmez)
-3. Masaüstü kısayolu seçeneği
-4. İlerleme çubuğuyla kurulum
-5. "Earth Studio'yu çalıştır" ile bitiş
+### Terminalde komut çalıştırmak (REPL)
 
-Kurulum klasöründe yalnızca `earth-studio.exe` ve kaldırıcı bulunur; dil,
-yorumlayıcı ve örnekler programın içine gömülüdür. `.earth` dosyalarına çift
-tıklamak onları Earth Studio'da açar. Kaldırmak için: **Ayarlar → Uygulamalar
-→ Earth Studio**.
+Program çalışmıyorken terminalin alt satırına Earth komutları yazabilirsin.
+Tanımladığın değişkenler sonraki komutlarda da kullanılabilir; bir ifadenin
+değeri hemen gösterilir:
 
-**Tek satırla kurulum (önerilen):** PowerShell'e şunu yapıştırın. Aynı
-kurulumu indirir, SHA-256 özetini doğrular ve çalıştırır. Bu yolla
-indirilen dosyalar Windows SmartScreen uyarısı göstermez.
-
-```powershell
-irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1 | iex
+```text
+earth› değişken fiyat = 120
+earth› fiyat * 1.2
+144
+earth› büyük_harf("istanbul")
+"İSTANBUL"
 ```
 
-Kurulum dosyası henüz dijital olarak imzalı değil. Bu yüzden tarayıcıdan
-indirilip açıldığında Windows "bilinmeyen yayımcı" uyarısı gösterebilir. Bu,
-imzasız her yeni program için görülen bir uyarıdır ve programın zararlı olduğu
-anlamına gelmez. Dosyayı aynı sayfadaki `SHA256SUMS.txt` ile
-`Get-FileHash EarthStudio-Kurulum.exe` komutuyla doğrulayabilirsiniz. İmzalama
-planı için [docs/imzalama.md](docs/imzalama.md) dosyasına bakın.
+### Dosyalar ve örnekler
+
+- Studio ilk açılışta `Belgeler\Earth` klasörünü oluşturur ve gezginde açar.
+  Programlarını burada tutabilirsin.
+- Örnek programlar Studio'nun içinde gelir ve `Belgeler\Earth\Örnekler`
+  altına yazılır. **📚 Örnekler** onları istediğin zaman geri getirir; senin
+  değiştirdiğin dosyaların üzerine yazmaz.
+- **📂 Klasör Aç** ile istediğin klasörde çalışabilirsin.
+- Windows'ta `.earth` dosyalarına çift tıklamak onları Studio'da açar.
+- Kaydedilmemiş değişiklikler, sekme ya da pencere kapatılırken sorulur.
 
 ### Otomatik güncelleme
 
-Earth Studio açılışta ve açık kaldığı sürece birkaç saatte bir GitHub
-Releases'taki en son sürüme bakar. Yeni bir sürüm varsa:
+Earth Studio açılışta ve açık kaldığı sürece birkaç saatte bir yeni sürüm
+olup olmadığına bakar. Yeni sürüm varsa:
 
-1. Kurulum dosyasını arka planda indirir ve sürümle birlikte yayınlanan
-   `SHA256SUMS.txt` ile doğrular. Doğrulanmayan dosya silinir, asla
-   çalıştırılmaz.
-2. Üstte "Earth Studio X hazır" şeridini gösterir. **Yeniden başlat ve
-   güncelle** güncellemeyi kurar ve Studio'yu yeni sürümle yeniden açar.
-3. Şeride dokunulmazsa güncelleme Studio kapatılırken sessizce kurulur;
-   bir sonraki açılışta yeni sürüm çalışır.
+1. Kurulum dosyasını arka planda indirir ve sürümle yayınlanan SHA-256
+   özetiyle doğrular. Doğrulanamayan dosya silinir, asla çalıştırılmaz.
+2. Üstte **⬆ Earth Studio X hazır** şeridini gösterir. **Yeniden başlat ve
+   güncelle** güncellemeyi kurar ve Studio'yu yeni sürümle açar.
+3. Şeride dokunmazsan güncelleme Studio kapatılırken sessizce kurulur; bir
+   sonraki açılışta yeni sürüm çalışır.
 
-Yani yeni bir sürüm yayınlamak (bir `v*` etiketi ve Releases'a
-`EarthStudio-Kurulum.exe` ile `SHA256SUMS.txt`) bütün kullanıcıları
-günceller. Durum çubuğundaki sürüm numarasına tıklamak hemen denetler.
-Kurumsal bilgisayarlarda otomatik güncellemeyi kapatmak için
-`EARTH_STUDIO_NO_UPDATE=1` ortam değişkeni tanımlanabilir.
-
-Sol alt köşedeki sayaç, kurulum dosyasının GitHub'dan toplam indirilme
-sayısını gösterir. Studio kullanıcılar hakkında hiçbir bilgi göndermez;
+Durum çubuğundaki sürüm numarasına (`v0.6.0` gibi) tıklamak hemen denetler.
+Sol alt köşedeki **⬇ … kişi indirdi** sayacı, kurulum dosyasının GitHub'dan
+toplam indirilme sayısıdır. Studio senin hakkında hiçbir bilgi göndermez;
 yalnızca herkese açık sürüm bilgisini okur.
 
-### Linux ve macOS
+## Dil öğreticisi
 
-Releases sayfasındaki `earth-studio-linux-x64.tar.gz` ya da
-`earth-studio-macos-arm64.tar.gz` arşivini açıp `earth-studio` programını
-çalıştırın.
+Bu bölümdeki her örneği Earth Studio'da yeni bir dosyaya yapıştırıp **F5** ile
+çalıştırabilirsin. Örneklerin altındaki kutular programın çıktısıdır.
 
-## Kaynaktan derleme
+### 1. İlk program
 
-[Rust](https://www.rust-lang.org/tools/install) kurun, sonra:
-
-```bash
-cargo run -p earth-studio                      # Earth Studio'yu aç
-cargo run -p earth-studio -- examples/fizzbuzz.earth
-```
-
-Windows kurulum dosyasını Linux'ta üretmek (MinGW-w64, Wine ve Wine altında
-kurulu [Inno Setup](https://jrsoftware.org/isinfo.php) gerekir):
-
-```bash
-rustup target add x86_64-pc-windows-gnu
-cargo build --release -p earth-studio --target x86_64-pc-windows-gnu
-cd windows && wine 'C:\InnoSetup\ISCC.exe' /DAppVersion=0.6.0 \
-  '/DStudioExe=..\target\x86_64-pc-windows-gnu\release\earth-studio.exe' installer.iss
-```
-
-Sonuç `windows/Output/EarthStudio-Kurulum.exe` olur. Yeni bir sürüm
-yayınlamak için bir etiket gönderin (`git tag v0.6.0 && git push origin
-v0.6.0`); `release` workflow'u kurulum dosyasını, Linux/macOS arşivlerini ve
-`SHA256SUMS.txt`'yi Releases sayfasına ekler.
-
-Kontroller:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-```
-
-## Dil rehberi
-
-### Anahtar kelimeler
-
-Her satırdaki yazımlar birbirinin aynısıdır. Türkçe karakterleri olmayan
-klavyeler için ASCII yazımlar da kabul edilir (`eger`, `degilse`, …).
-
-| Türkçe | ASCII | English | Anlamı |
-|---|---|---|---|
-| `değişken` | `degisken` | `let` | değişken tanımlama |
-| `eğer` | `eger` | `if` | koşul |
-| `değilse` | `degilse` | `else` | aksi halde |
-| `iken` | | `while` | koşul doğru iken döngü |
-| `her … içinde` | `icinde` | `for … in` | liste/metin üzerinde döngü |
-| `fonksiyon` | | `function`, `fn` | fonksiyon tanımlama |
-| `döndür` | `dondur` | `return` | fonksiyondan değer döndürme |
-| `kır` | `kir` | `break` | döngüden çıkma |
-| `devam` | | `continue` | sonraki tura geçme |
-| `ve` / `veya` / `değil` | `degil` | `and` / `or` / `not` | mantıksal işlemler |
-| `doğru` / `yanlış` | `dogru` / `yanlis` | `true` / `false` | mantıksal değerler |
-| `boş` | `bos` | `nil` | değer yok |
-| `dene` / `yakala` | | `try` / `catch` | hata yakalama |
-| `fırlat` | `firlat` | `throw` | hata fırlatma |
-| `içe_aktar` | `ice_aktar` | `import` | başka bir dosyayı yükleme |
-
-### Değerler ve işlemler
-
-- **Sayılar:** `42`, `3.14`. İşlemler: `+ - * / %`. Sıfıra bölme hata verir.
-- **Metinler:** `"Merhaba"`. Kaçış dizileri: `\" \\ \n \r \t`. `+` ile bir metne
-  herhangi bir değer eklenebilir: `"x = " + 5`.
-- **Listeler:** `[1, "iki", doğru]`. İndeksleme `liste[0]`, sondan saymak için
-  `liste[-1]`, atama `liste[0] = 5`. `+` iki listeyi birleştirir.
-- **Sözlükler:** `{"ad": "Ada", "yaş": 36}`. Anahtarlar metindir. Okuma
-  `kişi["ad"]`, ekleme ve güncelleme `kişi["şehir"] = "Londra"`. Olmayan bir
-  anahtarı okumak hata verir, önce `içerir(kişi, "şehir")` ile kontrol
-  edilebilir. Sözlükler ekleme sırasını korur. `her k içinde kişi` anahtarlar
-  üzerinde döner.
-- **Karşılaştırma:** `== != < <= > >=`. Sayılar ve metinler sıralanabilir.
-- **Doğruluk:** yalnızca `yanlış` ve `boş` yanlış sayılır. `0` ve `""` doğrudur.
-- `ve` / `veya` kısa devre yapar: sağ taraf yalnızca gerekirse hesaplanır.
-
-### Değişkenler ve kapsam
+`yaz` (İngilizcesi `print`) verdiği değerleri aralarına boşluk koyarak yazar
+ve satırı bitirir. `#` ile başlayan kısım satır sonuna kadar **yorumdur**;
+Earth onu görmezden gelir.
 
 ```earth
-değişken sayaç = 0      # tanımlama
-sayaç = sayaç + 1       # güncelleme (önce tanımlanmış olmalı)
+# Bu bir yorum
+yaz("Merhaba, Dünya!")
+yaz("2 + 3 =", 2 + 3)
+yaz()                     # boş satır
+yaz("Bitti")
 ```
 
-Her `{ … }` bloğu yeni bir kapsam açar. Blok içinde tanımlanan değişkenler
-dışarıdan görünmez.
+```text
+Merhaba, Dünya!
+2 + 3 = 5
 
-### Fonksiyonlar
+Bitti
+```
+
+### 2. Değişkenler
+
+Bir değişkeni ilk kez **`değişken`** (`let`) ile tanımlarsın; sonra `=` ile
+yeni değer verebilirsin. Değişken adları harf ya da `_` ile başlar; Türkçe
+harfler kullanılabilir.
+
+```earth
+değişken sayaç = 0
+sayaç = sayaç + 1
+sayaç = sayaç * 10
+değişken öğrenci_adı = "Ayşe"
+yaz(öğrenci_adı, sayaç)
+```
+
+```text
+Ayşe 10
+```
+
+Tanımlanmamış bir değişkene değer vermek hatadır; Earth bunu yazım
+hatalarını yakalamak için yapar:
+
+```text
+✖ Hata: 1:7: Tanımsız değişken 'sayac' (önce 'değişken sayac = ...' ile tanımlayın)
+```
+
+**Kapsam:** Her `{ … }` bloğu yeni bir kapsam açar. Blok içinde tanımlanan bir
+değişken bloğun dışından görünmez; dışarıdaki değişkenler ise içeriden
+kullanılabilir ve değiştirilebilir.
+
+```earth
+değişken toplam = 0
+eğer doğru {
+    değişken geçici = 5
+    toplam = toplam + geçici
+}
+yaz(toplam)
+```
+
+```text
+5
+```
+
+### 3. Veri türleri
+
+| Tür | Örnek | Açıklama |
+|---|---|---|
+| **sayı** | `42`, `-7`, `3.14` | Tam ve ondalıklı sayılar aynı türdür. Tam sayılar `.0` olmadan yazılır. |
+| **metin** | `"Merhaba"` | Çift tırnak içinde yazılır. |
+| **mantıksal** | `doğru`, `yanlış` | İngilizcesi `true`, `false`. |
+| **boş** | `boş` | "Değer yok" anlamına gelir. İngilizcesi `nil`. |
+| **liste** | `[1, "iki", doğru]` | Sıralı değerler. |
+| **sözlük** | `{"ad": "Ada"}` | Metin anahtarlı değerler. |
+| **fonksiyon** | `yaz`, kendi fonksiyonların | Fonksiyonlar da değerdir; değişkene konabilir, başka fonksiyona verilebilir. |
+
+`tür(x)` (`type`) bir değerin türünü söyler:
+
+```earth
+yaz(tür(42), tür("a"), tür(doğru), tür(boş), tür([1]), tür({}), tür(yaz))
+```
+
+```text
+sayı metin mantıksal boş liste sözlük fonksiyon
+```
+
+Türler arasında çeviri için `metin(x)` (`str`) ve `sayı(x)` (`number`)
+kullanılır. `sayı`, çevrilemeyen bir metinde hata vermek yerine `boş` döndürür;
+böylece kullanıcı girdisini kolayca kontrol edebilirsin:
+
+```earth
+yaz(sayı("42") + 1, sayı("kırk iki"), metin(3.5) + "!")
+```
+
+```text
+43 boş 3.5!
+```
+
+### 4. İşlemler
+
+| İşlem | Anlamı | Örnek | Sonuç |
+|---|---|---|---|
+| `+` `-` `*` `/` | toplama, çıkarma, çarpma, bölme | `7 / 2` | `3.5` |
+| `%` | bölümden kalan | `7 % 3` | `1` |
+| `-x` | eksi | `-(2 + 3)` | `-5` |
+| `==` `!=` | eşit mi, farklı mı | `2 == 2.0` | `doğru` |
+| `<` `<=` `>` `>=` | karşılaştırma (sayılar ve metinler) | `"elma" < "armut"` | `yanlış` |
+| `ve` (`and`) | ikisi de doğruysa doğru | `doğru ve yanlış` | `yanlış` |
+| `veya` (`or`) | biri doğruysa doğru | `doğru veya yanlış` | `doğru` |
+| `değil` (`not`) | tersi | `değil doğru` | `yanlış` |
+
+**Öncelik** (yüksekten düşüğe): `-x`, `değil` → `*` `/` `%` → `+` `-` →
+`<` `<=` `>` `>=` → `==` `!=` → `ve` → `veya`. Emin olmadığında parantez kullan.
+
+```earth
+yaz(2 + 3 * 4, (2 + 3) * 4, 10 % 4, 1 / 4)
+yaz(3 > 2 ve 2 > 1, değil (1 == 1))
+```
+
+```text
+14 20 2 0.25
+doğru yanlış
+```
+
+**Doğruluk:** koşullarda yalnızca `yanlış` ve `boş` yanlış sayılır; `0`, `""`
+ve `[]` doğrudur. `ve`/`veya` **kısa devre** yapar: sonuç belli olduysa sağ
+taraf hiç hesaplanmaz.
+
+**Sıfıra bölme** hata verir: `yaz(1 / 0)` → `Sıfıra bölme`.
+
+### 5. Metinler
+
+Metinler `+` ile birleştirilir. Bir metne herhangi bir değer eklenebilir; değer
+otomatik olarak metne çevrilir.
+
+```earth
+değişken yaş = 36
+yaz("Yaş: " + yaş)
+yaz("Satır 1\nSatır 2")
+yaz("Tırnak: \"alıntı\"  Ters bölü: \\")
+```
+
+```text
+Yaş: 36
+Satır 1
+Satır 2
+Tırnak: "alıntı"  Ters bölü: \
+```
+
+Kaçış dizileri: `\n` (yeni satır), `\t` (sekme), `\r`, `\"`, `\\`.
+
+Metnin harflerine indeksle ulaşılır (0'dan başlar, negatif indeks sondan
+sayar) ve `her … içinde` ile harf harf gezilebilir:
+
+```earth
+değişken söz = "Earth"
+yaz(söz[0], söz[-1], uzunluk(söz))
+yaz(büyük_harf("iğdır"), küçük_harf("IŞIK"), ters("abc"))
+yaz(böl("elma,armut,kiraz", ","), içerir("Merhaba", "hab"))
+yaz(değiştir("merhaba dünya", "dünya", "Earth"), "[" + kırp("  boşluk  ") + "]")
+```
+
+```text
+E h 5
+İĞDIR ışık cba
+["elma", "armut", "kiraz"] doğru
+merhaba Earth [boşluk]
+```
+
+`büyük_harf` ve `küçük_harf`, Türkçe programlarda Türkçe kurallarına uyar:
+`i` → `İ`, `ı` → `I`.
+
+### 6. Koşullar
+
+```earth
+değişken puan = 72
+
+eğer puan >= 85 {
+    yaz("Pekiyi")
+} değilse eğer puan >= 70 {
+    yaz("İyi")
+} değilse eğer puan >= 50 {
+    yaz("Geçer")
+} değilse {
+    yaz("Kaldı")
+}
+```
+
+```text
+İyi
+```
+
+`değilse`, kapanan `}` ile aynı satırda ya da bir alt satırda başlayabilir.
+Kısa koşullar tek satırda yazılabilir: `eğer x < 0 { x = -x }`.
+
+### 7. Döngüler
+
+**`iken`** (`while`): koşul doğru olduğu sürece tekrarlar.
+
+```earth
+değişken n = 1
+iken n < 100 {
+    n = n * 2
+}
+yaz(n)
+```
+
+```text
+128
+```
+
+**`her … içinde`** (`for … in`): bir listenin, metnin ya da sözlüğün her
+elemanı için tekrarlar. Sayı dizileri için **`aralık`** (`range`) kullanılır:
+`aralık(5)` → 0'dan 4'e, `aralık(2, 6)` → 2'den 5'e, `aralık(10, 0, -3)` → 10,
+7, 4, 1.
+
+```earth
+her i içinde aralık(1, 4) {
+    yaz(i, "x", i, "=", i * i)
+}
+her harf içinde "abc" {
+    yaz(harf)
+}
+yaz(aralık(10, 0, -3))
+```
+
+```text
+1 x 1 = 1
+2 x 2 = 4
+3 x 3 = 9
+a
+b
+c
+[10, 7, 4, 1]
+```
+
+**`kır`** (`break`) döngüden hemen çıkar; **`devam`** (`continue`) bu turu
+atlayıp sonrakine geçer:
+
+```earth
+her i içinde aralık(10) {
+    eğer i % 2 == 0 { devam }
+    eğer i > 7 { kır }
+    yaz(i)
+}
+```
+
+```text
+1
+3
+5
+7
+```
+
+Çalışan bir döngüyü Earth Studio'da **Shift+F5** ile her zaman durdurabilirsin.
+
+### 8. Listeler
+
+```earth
+değişken meyveler = ["elma", "armut"]
+ekle(meyveler, "kiraz")             # sona ekle
+meyveler[0] = "muz"                 # değiştir
+yaz(meyveler, uzunluk(meyveler))
+yaz(meyveler[0], meyveler[-1])      # ilk ve son eleman
+yaz(sil(meyveler, 1), meyveler)     # çıkar ve döndür
+yaz(içerir(meyveler, "kiraz"))
+```
+
+```text
+["muz", "armut", "kiraz"] 3
+muz kiraz
+armut ["muz", "kiraz"]
+doğru
+```
+
+Liste fonksiyonları yeni bir liste döndürür, asıl listeyi değiştirmez:
+
+```earth
+değişken sayılar = [5, 3, 8, 1]
+yaz(sırala(sayılar), ters(sayılar), dilim(sayılar, 1, 3))
+yaz(topla(sayılar), en_küçük(sayılar), en_büyük(sayılar))
+yaz(birleştir(sayılar, " - "), [1, 2] + [3])
+```
+
+```text
+[1, 3, 5, 8] [1, 8, 3, 5] [3, 8]
+17 1 8
+5 - 3 - 8 - 1 [1, 2, 3]
+```
+
+Var olmayan bir indeks hata verir: `[1, 2][5]` → `İndeks 5 sınırların dışında
+(uzunluk 2)`.
+
+### 9. Sözlükler
+
+Sözlükler bir **anahtarı** (her zaman metin) bir **değere** bağlar. Eklenme
+sırasını korurlar.
+
+```earth
+değişken kişi = {
+    "ad": "Ada",
+    "yaş": 36,
+}
+kişi["şehir"] = "Londra"         # ekle
+kişi["yaş"] = kişi["yaş"] + 1    # güncelle
+yaz(kişi)
+yaz(anahtarlar(kişi), değerler(kişi))
+yaz(içerir(kişi, "ad"), içerir(kişi, "soyad"))
+
+her anahtar içinde kişi {
+    yaz(anahtar, "→", kişi[anahtar])
+}
+```
+
+```text
+{"ad": "Ada", "yaş": 37, "şehir": "Londra"}
+["ad", "yaş", "şehir"] ["Ada", 37, "Londra"]
+doğru yanlış
+ad → Ada
+yaş → 37
+şehir → Londra
+```
+
+Olmayan bir anahtarı okumak hata verir; önce `içerir` ile kontrol et.
+`sil(kişi, "şehir")` bir anahtarı çıkarır.
+
+### 10. Fonksiyonlar
+
+**`fonksiyon`** (`function` ya da `fn`) ile tanımlanır, **`döndür`**
+(`return`) ile değer verir. `döndür` olmayan fonksiyon `boş` döndürür.
+
+```earth
+fonksiyon alan(en, boy) {
+    döndür en * boy
+}
+
+fonksiyon selamla(ad) {
+    yaz("Merhaba, " + ad + "!")
+}
+
+yaz(alan(3, 4))
+selamla("Deniz")
+```
+
+```text
+12
+Merhaba, Deniz!
+```
+
+**Özyineleme:** bir fonksiyon kendini çağırabilir (en fazla 1000 iç içe çağrı).
+
+```earth
+fonksiyon faktöriyel(n) {
+    eğer n <= 1 { döndür 1 }
+    döndür n * faktöriyel(n - 1)
+}
+yaz(faktöriyel(10))
+```
+
+```text
+3628800
+```
+
+**Fonksiyonlar değerdir ve kapanış (closure) oluşturur:** bir fonksiyon,
+tanımlandığı yerdeki değişkenleri hatırlar.
 
 ```earth
 fonksiyon sayaç_yap() {
@@ -210,206 +574,478 @@ fonksiyon sayaç_yap() {
         n = n + 1
         döndür n
     }
-    döndür artır          # fonksiyonlar değerdir; kapanış (closure) oluşturur
+    döndür artır
+}
+
+değişken say = sayaç_yap()
+say()
+say()
+yaz(say())
+
+fonksiyon iki_kez(f, x) {
+    döndür f(f(x))
+}
+fonksiyon kare(x) { döndür x * x }
+yaz(iki_kez(kare, 3))
+```
+
+```text
+3
+81
+```
+
+Fonksiyonu yanlış sayıda argümanla çağırmak hatadır:
+`'alan' 2 argüman bekliyor, 1 verildi`.
+
+### 11. Kullanıcıdan girdi
+
+**`girdi`** (`input`) bir istem yazar ve kullanıcının yazdığı satırı metin
+olarak döndürür. Sayı istiyorsan `sayı(...)` ile çevir:
+
+```earth
+değişken metin_yaş = girdi("Kaç yaşındasın? ")
+değişken yaş = sayı(metin_yaş)
+eğer yaş == boş {
+    yaz("Bu bir sayı değil.")
+} değilse {
+    yaz("10 yıl sonra", yaş + 10, "yaşında olacaksın.")
 }
 ```
 
-Özyineleme en fazla 1000 iç içe çağrıya kadar desteklenir.
+Earth Studio'da program girdi beklerken durum çubuğunda **Girdi bekleniyor**
+yazar; cevabını terminale yazıp **Enter**'a basarsın.
 
-### Yerleşik fonksiyonlar
+### 12. Hata yakalama
 
-| Türkçe | English | Açıklama |
-|---|---|---|
-| `yaz(a, b, …)` | `print` | değerleri boşlukla ayırıp yazdırır |
-| `girdi(istem?)` | `input` | bir satır okur; dosya sonunda `boş` döner |
-| `uzunluk(x)` | `len` | metin veya liste uzunluğu |
-| `aralık(son)`, `aralık(baş, son, adım?)` | `range` | sayı listesi üretir |
-| `ekle(liste, değer)` | `push` | listenin sonuna ekler |
-| `sil(liste, indeks)`, `sil(sözlük, anahtar)` | `remove` | elemanı çıkarır ve döndürür |
-| `içerir(x, aranan)` | `contains` | listede eleman, sözlükte anahtar, metinde alt metin var mı |
-| `anahtarlar(sözlük)` | `keys` | anahtarların listesi |
-| `değerler(sözlük)` | `values` | değerlerin listesi |
-| `metin(x)` | `str` | değeri metne çevirir |
-| `sayı(x)` | `number` | metni sayıya çevirir; olmazsa `boş` döner |
-| `tür(x)` | `type` | `"sayı"`, `"metin"`, `"liste"`, `"sözlük"`, … |
-
-**Metin**
-
-| Türkçe | English | Açıklama |
-|---|---|---|
-| `büyük_harf(m)`, `küçük_harf(m)` | `upper`, `lower` | harf büyüklüğü; Türkçe programlarda `i`↔`İ`, `ı`↔`I` |
-| `kırp(m)` | `trim` | baştaki ve sondaki boşlukları siler |
-| `böl(m, ayırıcı?)` | `split` | metni parçalara ayırır; ayırıcı yoksa boşluklardan |
-| `birleştir(liste, ayırıcı?)` | `join` | elemanları metin olarak birleştirir |
-| `değiştir(m, eski, yeni)` | `replace` | geçen her `eski`yi `yeni` yapar |
-
-**Matematik**
-
-| Türkçe | English | Açıklama |
-|---|---|---|
-| `mutlak(x)`, `karekök(x)`, `üs(x, y)` | `abs`, `sqrt`, `pow` | |
-| `yuvarla(x, basamak?)`, `taban(x)`, `tavan(x)` | `round`, `floor`, `ceil` | |
-| `rastgele()`, `rastgele(n)`, `rastgele(a, b)` | `random` | [0, 1) kesir, [0, n) ya da [a, b] tam sayı |
-| `en_küçük(…)`, `en_büyük(…)` | `min`, `max` | sayılar ya da bir sayı listesi |
-| `topla(liste)` | `sum` | sayıların toplamı |
-
-**Liste**
-
-| Türkçe | English | Açıklama |
-|---|---|---|
-| `sırala(liste)` | `sort` | sıralanmış yeni liste (hepsi sayı ya da hepsi metin) |
-| `ters(x)` | `reverse` | ters çevrilmiş yeni liste veya metin |
-| `dilim(x, baş, son?)` | `slice` | `baş`tan `son`a kadarki parça; negatif indeks sondan sayar |
-
-### Hata yakalama
+Hata verebilecek kodu **`dene`** (`try`) içine, hata olursa çalışacak kodu
+**`yakala`** (`catch`) içine yaz. Kendi hatanı **`fırlat`** (`throw`) ile
+oluşturabilirsin.
 
 ```earth
 fonksiyon böl_güvenli(a, b) {
-    eğer b == 0 { fırlat "sıfıra bölünemez" }
+    eğer b == 0 { fırlat "Sıfıra bölünemez" }
     döndür a / b
 }
 
 dene {
+    yaz(böl_güvenli(10, 2))
     yaz(böl_güvenli(1, 0))
+    yaz("Bu satır çalışmaz")
 } yakala hata {
-    yaz("Hata:", hata)
+    yaz("Yakalandı:", hata)
 }
+
+dene {
+    yaz([1, 2, 3][10])
+} yakala hata {
+    yaz("Earth'ün kendi hatası da yakalanır:", hata)
+}
+yaz("Program devam ediyor")
 ```
 
-`fırlat` herhangi bir değeri (metin, sözlük, …) fırlatabilir; `yakala`
-o değeri olduğu gibi alır. Earth'ün kendi hataları (sıfıra bölme, olmayan
-indeks, …) da yakalanabilir; bu durumda hata değişkeni mesajı metin olarak
-taşır. `yakala`dan sonraki değişken adı isteğe bağlıdır.
+```text
+5
+Yakalandı: Sıfıra bölünemez
+Earth'ün kendi hatası da yakalanır: İndeks 10 sınırların dışında (uzunluk 3)
+Program devam ediyor
+```
 
-### Modüller
+- `fırlat` her türlü değeri fırlatabilir; örneğin bir sözlük:
+  `fırlat {"kod": 404, "mesaj": "Bulunamadı"}`. `yakala` o değeri olduğu gibi
+  alır.
+- Earth'ün kendi hataları (sıfıra bölme, olmayan indeks…) yakalandığında hata
+  değişkeni mesajı metin olarak taşır.
+- `yakala`dan sonraki değişken adı isteğe bağlıdır: `} yakala { … }`.
+- Yakalanmayan bir hata programı durdurur:
+  `Yakalanmamış hata: Sıfıra bölünemez`.
+
+### 13. Modüller
+
+Büyüyen programları birden fazla dosyaya bölebilirsin. **`içe_aktar`**
+(`import`) başka bir `.earth` dosyasını çalıştırır ve tanımladığı değişkenleri
+ve fonksiyonları kullanılabilir yapar.
 
 ```earth
 # geometri.earth
 değişken PI = 3.14159
-fonksiyon alan(r) { döndür PI * r * r }
-
-# ana.earth
-içe_aktar "geometri.earth"
-yaz(alan(2))
+fonksiyon daire_alanı(r) {
+    döndür PI * r * r
+}
 ```
 
-`içe_aktar`, dosyayı içe aktaran dosyanın klasörüne göre bulur ve yalnızca
-bir kez çalıştırır. Modül kendi kapsamında çalışır, yani içe aktaranın
-değişkenlerini göremez; tanımladığı değişkenler ve fonksiyonlar içe aktarana
-kopyalanır. Modüldeki bir hata, modül dosyasının adı ve satırıyla gösterilir.
+```earth
+# ana.earth (aynı klasörde)
+içe_aktar "geometri.earth"
+yaz(daire_alanı(2))
+```
 
-### Sözdizimi notları
+- Yol, içe aktaran dosyanın bulunduğu klasöre göredir; alt klasörler de
+  olur: `içe_aktar "araçlar/metin.earth"`.
+- Her modül, kaç kez içe aktarılırsa aktarılsın, bir kez çalışır.
+- Modül kendi kapsamında çalışır: içe aktaran dosyanın değişkenlerini göremez.
+- Birbirini içe aktaran dosyalar (döngüsel içe aktarma) hata verir.
+- Modüldeki bir hata, modülün dosya adı ve satırıyla gösterilir.
 
-- Her satıra bir komut yazılır. Aynı satırda birden fazla komut için `;`
-  kullanın.
-- `#` ile başlayan kısım satır sonuna kadar yorumdur.
-- Parantez, köşeli parantez ve sözlük içindeki ifadeler birden fazla satıra
-  yayılabilir.
-- `değilse`, kapanan `}` ile aynı satırda ya da bir sonraki satırda olabilir.
+### 14. Türkçe ve İngilizce
 
-### Çıktı dili
+Her anahtar kelimenin ve yerleşik fonksiyonun Türkçe, ASCII-Türkçe (Türkçe
+harfsiz klavyeler için) ve İngilizce yazımı vardır. Hepsi aynı anlama gelir ve
+aynı programda karıştırılabilir:
 
-Earth, programın hangi dilde yazıldığını anahtar kelimelerinden anlar ve o
-dilde cevap verir. İngilizce yazılmış bir program `true`, `nil` ve İngilizce
-hata mesajları görür; Türkçe yazılmış bir program `doğru`, `boş` ve Türkçe
-hata mesajları görür. Earth Studio'nun durum çubuğu, açık dosyanın hangi
-dilde algılandığını gösterir.
-
-### Hata mesajları
-
-Hatalar satır ve sütun bilgisiyle Earth Studio'nun terminalinde gösterilir;
-hatalı satır editörde kırmızıyla işaretlenir:
+```earth
+değişken liste = [3, 1, 2]
+for x in sirala(liste) {
+    eger x > 1 { print("büyük:", x) }
+}
+```
 
 ```text
-✖ Hata: program.earth:2:14: '*' işlemi 'metin' ve 'sayı' türleri arasında yapılamaz
+büyük: 2
+büyük: 3
 ```
 
-## Editör desteği
+**Çıktının dili:** Earth, programın çoğunlukla hangi dilin anahtar
+kelimeleriyle yazıldığına bakar ve o dilde cevap verir. Türkçe bir program
+`doğru`, `boş`, `liste` ve Türkçe hata mesajları görür; İngilizce bir program
+`true`, `nil`, `list` ve İngilizce hata mesajları görür:
 
-`editors/vscode` klasörü VS Code için sözdizimi renklendirme eklentisidir.
-Kurulum için [editors/vscode/README.md](editors/vscode/README.md) dosyasına
-bakın.
-
-## Mimari
-
-- **`src/keywords.rs`:** dilin çok dilli sözlüğü. Anahtar kelimelerin ve
-  yerleşik fonksiyonların bütün yazımları buradadır.
-- **`src/messages.rs`:** kullanıcıya gösterilen bütün mesajlar, her dilde.
-- **`src/lexer.rs`:** kaynak metni satır/sütun bilgili token'lara ayırır.
-- **`src/parser.rs`, `src/ast.rs`:** öncelik sıralı özyinelemeli iniş
-  (recursive descent) ayrıştırıcı ve sözdizimi ağacı. `kır` / `döndür` gibi
-  yanlış yerde kullanılan komutları çalıştırmadan önce yakalar.
-- **`src/interpreter.rs`, `src/value.rs`:** ağaç gezen yorumlayıcı, değerler,
-  kapsamlar, hata yakalama ve modüller.
-- **`src/stdlib.rs`:** girdi/çıktı dışındaki yerleşik fonksiyonlar.
-- **`studio/`:** Earth Studio editörü (egui). Programları ayrı bir iş
-  parçacığında çalıştırır ve yorumlayıcının `set_interrupt` desteğiyle
-  durdurur. Dil çekirdeği (`src/`) bağımlılıksız kalır; grafik
-  kütüphaneleri yalnızca Studio'da kullanılır.
-
-Dil çekirdeği yalnızca Rust standart kütüphanesini kullanır.
-
-### Windows notu
-
-Windows'ta varsayılan Rust hedefi `x86_64-pc-windows-msvc`'dir ve MSVC
-bağlayıcısını gerektirir. `link.exe not found` hatası alırsanız **Visual Studio
-Build Tools** içinden **Desktop development with C++** iş yükünü (Windows 10/11
-SDK dahil) kurun. Ardından **x64 Native Tools Command Prompt for VS** açıp şu
-komutları çalıştırın:
-
-```bat
-where cl
-where link
-cargo test
-cargo run -p earth-studio
+```earth
+print(1 < 2, nil, type([]))
 ```
 
-## Katkı rehberi
+```text
+true nil list
+```
 
-### Yeni bir insan dili eklemek
+Earth Studio'nun durum çubuğu, açık dosyanın hangi dilde algılandığını
+gösterir.
 
-1. `src/keywords.rs` içinde `Lang` enum'una yeni dili ekleyin ve `KEYWORDS` ile
-   `BUILTINS` tablolarına o dilin yazımları için yeni bir sütun açın.
-2. `src/messages.rs` içinde tür adlarını, mesajları ve CLI metinlerini o dile
-   çevirin. Derleyici eksik çevirileri gösterir.
+### 15. Sözdizimi kuralları
+
+- Her satıra bir komut yazılır. Aynı satırda birden fazla komut için `;`
+  kullanılır: `değişken a = 1; değişken b = 2`.
+- Bloklar `{ … }` ile yazılır; girinti zorunlu değildir ama okunabilirlik için
+  önerilir.
+- Parantez `( )`, köşeli parantez `[ ]` ve sözlük `{ }` içindeki ifadeler birden
+  fazla satıra yayılabilir; listelerde ve sözlüklerde sondaki virgül serbesttir.
+- `#` ile başlayan kısım satır sonuna kadar yorumdur.
+- `döndür` yalnızca fonksiyonda, `kır`/`devam` yalnızca döngüde kullanılabilir.
+  Bu hatalar program çalışmadan önce yakalanır.
+
+## Başvuru
+
+### Anahtar kelimeler
+
+| Türkçe | ASCII | English | Anlamı |
+|---|---|---|---|
+| `değişken` | `degisken` | `let` | değişken tanımlama |
+| `eğer` | `eger` | `if` | koşul |
+| `değilse` | `degilse` | `else` | aksi halde |
+| `iken` | | `while` | koşul doğru iken döngü |
+| `her … içinde` | `icinde` | `for … in` | liste, metin ya da sözlük üzerinde döngü |
+| `kır` | `kir` | `break` | döngüden çıkma |
+| `devam` | | `continue` | sonraki tura geçme |
+| `fonksiyon` | | `function`, `fn` | fonksiyon tanımlama |
+| `döndür` | `dondur` | `return` | fonksiyondan değer döndürme |
+| `dene` / `yakala` | | `try` / `catch` | hata yakalama |
+| `fırlat` | `firlat` | `throw` | hata fırlatma |
+| `içe_aktar` | `ice_aktar` | `import` | başka bir dosyayı yükleme |
+| `ve` / `veya` / `değil` | `degil` | `and` / `or` / `not` | mantıksal işlemler |
+| `doğru` / `yanlış` | `dogru` / `yanlis` | `true` / `false` | mantıksal değerler |
+| `boş` | `bos` | `nil` | değer yok |
+
+### Yerleşik fonksiyonlar
+
+`?` ile işaretli parametreler isteğe bağlıdır. Türkçe adların ASCII yazımları
+da geçerlidir (`aralik`, `buyuk_harf`, `karekok`…).
+
+**Temel**
+
+| Türkçe | English | Açıklama | Örnek → sonuç |
+|---|---|---|---|
+| `yaz(a, b, …)` | `print` | Değerleri boşlukla ayırıp yazar, satırı bitirir. | `yaz("a", 1)` → `a 1` |
+| `girdi(istem?)` | `input` | Bir satır okur; girdi bittiyse `boş`. | `girdi("Ad? ")` |
+| `uzunluk(x)` | `len` | Metin, liste ya da sözlüğün uzunluğu. | `uzunluk("abc")` → `3` |
+| `aralık(son)` / `aralık(baş, son, adım?)` | `range` | Sayı listesi; `son` dahil değil. | `aralık(3)` → `[0, 1, 2]` |
+| `tür(x)` | `type` | Değerin türü. | `tür(1)` → `"sayı"` |
+| `metin(x)` | `str` | Değeri metne çevirir. | `metin(5)` → `"5"` |
+| `sayı(x)` | `number` | Metni sayıya çevirir; olmazsa `boş`. | `sayı("2.5")` → `2.5` |
+
+**Metin**
+
+| Türkçe | English | Açıklama | Örnek → sonuç |
+|---|---|---|---|
+| `büyük_harf(m)` | `upper` | Büyük harf (Türkçe programlarda `i`→`İ`). | `büyük_harf("iz")` → `"İZ"` |
+| `küçük_harf(m)` | `lower` | Küçük harf (Türkçe programlarda `I`→`ı`). | `küçük_harf("IŞIK")` → `"ışık"` |
+| `kırp(m)` | `trim` | Baştaki ve sondaki boşlukları siler. | `kırp(" a ")` → `"a"` |
+| `böl(m, ayırıcı?)` | `split` | Parçalara ayırır; ayırıcı yoksa boşluklardan. | `böl("a b")` → `["a", "b"]` |
+| `birleştir(liste, ayırıcı?)` | `join` | Elemanları metin olarak birleştirir. | `birleştir([1, 2], "-")` → `"1-2"` |
+| `değiştir(m, eski, yeni)` | `replace` | Geçen her `eski`yi `yeni` yapar. | `değiştir("aa", "a", "b")` → `"bb"` |
+| `içerir(m, parça)` | `contains` | Metin parçayı içeriyor mu? | `içerir("abc", "b")` → `doğru` |
+| `ters(m)` | `reverse` | Metni ters çevirir. | `ters("abc")` → `"cba"` |
+| `dilim(m, baş, son?)` | `slice` | `baş`tan `son`a kadarki parça. | `dilim("Merhaba", 0, 3)` → `"Mer"` |
+
+**Liste ve sözlük**
+
+| Türkçe | English | Açıklama | Örnek → sonuç |
+|---|---|---|---|
+| `ekle(liste, değer)` | `push` | Listenin sonuna ekler. | `ekle(l, 4)` |
+| `sil(liste, indeks)` / `sil(sözlük, anahtar)` | `remove` | Elemanı çıkarır ve döndürür. | `sil([7, 8], 0)` → `7` |
+| `içerir(x, aranan)` | `contains` | Listede eleman, sözlükte anahtar var mı? | `içerir([1, 2], 2)` → `doğru` |
+| `anahtarlar(sözlük)` | `keys` | Anahtarların listesi. | `anahtarlar({"a": 1})` → `["a"]` |
+| `değerler(sözlük)` | `values` | Değerlerin listesi. | `değerler({"a": 1})` → `[1]` |
+| `sırala(liste)` | `sort` | Sıralanmış yeni liste (hepsi sayı ya da hepsi metin). | `sırala([3, 1])` → `[1, 3]` |
+| `ters(liste)` | `reverse` | Ters çevrilmiş yeni liste. | `ters([1, 2])` → `[2, 1]` |
+| `dilim(liste, baş, son?)` | `slice` | Parça; negatif indeks sondan sayar. | `dilim([1, 2, 3], -2)` → `[2, 3]` |
+| `topla(liste)` | `sum` | Sayıların toplamı. | `topla([1, 2, 3])` → `6` |
+
+**Matematik**
+
+| Türkçe | English | Açıklama | Örnek → sonuç |
+|---|---|---|---|
+| `mutlak(x)` | `abs` | Mutlak değer. | `mutlak(-3)` → `3` |
+| `karekök(x)` | `sqrt` | Karekök. | `karekök(16)` → `4` |
+| `üs(x, y)` | `pow` | x üzeri y. | `üs(2, 10)` → `1024` |
+| `yuvarla(x, basamak?)` | `round` | Yuvarlar; isteğe bağlı ondalık basamak. | `yuvarla(2.567, 2)` → `2.57` |
+| `taban(x)` / `tavan(x)` | `floor` / `ceil` | Aşağı / yukarı yuvarlar. | `taban(2.7)` → `2` |
+| `en_küçük(…)` / `en_büyük(…)` | `min` / `max` | Sayıların ya da bir listenin en küçüğü / en büyüğü. | `en_büyük(3, 9, 2)` → `9` |
+| `rastgele()` | `random` | 0 ile 1 arasında rastgele kesir. | `rastgele()` → `0.42…` |
+| `rastgele(n)` / `rastgele(a, b)` | `random` | `[0, n)` ya da `[a, b]` aralığında rastgele tam sayı. | `rastgele(1, 6)` → zar |
+
+### Sık görülen hata mesajları
+
+| Mesaj | Ne demek, ne yapmalı |
+|---|---|
+| `Tanımsız değişken 'x'` | `x` hiç tanımlanmamış ya da adı yanlış yazılmış. İlk kullanımda `değişken x = …` yaz. |
+| `')' bekleniyordu, … bulundu` | Bir parantez kapatılmamış ya da fazladan bir şey yazılmış. Belirtilen sütuna bak. |
+| `Satır sonu bekleniyordu` | Aynı satıra iki komut yazılmış. Alt satıra geç ya da araya `;` koy. |
+| `Blok kapatılmamış: '}' bekleniyordu` | Bir `{` için `}` eksik. |
+| `'+' işlemi 'sayı' ve 'mantıksal' türleri arasında yapılamaz` | Bu iki tür bu işlemle kullanılamaz. Gerekirse `metin(…)` ya da `sayı(…)` ile çevir. |
+| `Sıfıra bölme` | Bir sayı sıfıra bölünmüş. Bölmeden önce kontrol et. |
+| `İndeks 5 sınırların dışında (uzunluk 2)` | Listede ya da metinde olmayan bir sıraya erişilmiş. |
+| `Sözlükte "x" anahtarı yok` | Okumadan önce `içerir(sözlük, "x")` ile kontrol et. |
+| `'f' 2 argüman bekliyor, 1 verildi` | Fonksiyon yanlış sayıda değerle çağrılmış. |
+| `'kır' yalnızca bir döngünün içinde kullanılabilir` | `kır`/`devam` döngü dışında; `döndür` fonksiyon dışında kullanılmış. |
+| `Çok derin özyineleme` | Bir fonksiyon kendini 1000'den fazla iç içe çağırmış; çoğunlukla durma koşulu eksiktir. |
+| `Program durduruldu` | Program **Durdur** ile kesilmiş. |
+
+## Örnek programlar
+
+Bu örnekler Earth Studio'nun içinde gelir (**📚 Örnekler**) ve depoda
+[`examples/`](examples) klasöründe de bulunur.
+
+| Dosya | Gösterdiği |
+|---|---|
+| [`hello.earth`](examples/hello.earth) | Türkçe ve İngilizce `yaz` |
+| [`fizzbuzz.earth`](examples/fizzbuzz.earth) | Koşullar ve `her … içinde` döngüsü |
+| [`fibonacci.earth`](examples/fibonacci.earth) | İngilizce anahtar kelimeler, özyineleme, listeler |
+| [`liste.earth`](examples/liste.earth) | Listeler, fonksiyonlar ve kapanışlar |
+| [`sozluk.earth`](examples/sozluk.earth) | Sözlüklerle kelime sayma |
+| [`selam.earth`](examples/selam.earth) | Kullanıcıdan girdi okuma |
+| [`moduller.earth`](examples/moduller.earth) | Modül içe aktarma, hata yakalama, metin fonksiyonları |
+| [`araclar.earth`](examples/araclar.earth) | `moduller.earth`'ün içe aktardığı modül |
+
+## Kurulum ayrıntıları
+
+### Windows
+
+[Releases](https://github.com/MahmutSibal/earth-lang/releases/latest)
+sayfasındaki **`EarthStudio-Kurulum.exe`** şu adımlarla kurar:
+
+1. Hoş geldin ekranı (kurulum, Windows'un diline göre Türkçe ya da İngilizce açılır)
+2. Kurulum klasörü — varsayılan `%LOCALAPPDATA%\Programs\Earth Studio`;
+   **yönetici izni gerekmez**
+3. Masaüstü kısayolu seçeneği (işaretli gelir)
+4. İlerleme çubuğuyla kurulum
+5. "Earth Studio'yu çalıştır" ile bitiş
+
+Kurulumdan sonra:
+
+- Başlat menüsünde ve masaüstünde **Earth Studio** kısayolu bulunur.
+- `.earth` dosyaları çift tıklanınca Studio'da açılır.
+- Kurulum klasöründe yalnızca `earth-studio.exe` ve kaldırıcı vardır; dil,
+  yorumlayıcı ve örnekler programın içine gömülüdür.
+- Kaldırmak için **Ayarlar → Uygulamalar → Earth Studio**. Kaldırma,
+  `Belgeler\Earth` klasöründeki programlarına dokunmaz.
+
+**Tek satırla kurulum:** PowerShell'e yapıştır. Aynı kurulum dosyasını indirir,
+SHA-256 özetini doğrular, masaüstü kısayoluyla sessizce kurar. Bu yolla
+indirilen dosyalar Windows SmartScreen uyarısı göstermez.
+
+```powershell
+irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1 | iex
+```
+
+**Doğrulama:** Releases sayfasındaki `SHA256SUMS.txt` dosyasındaki özet ile
+indirdiğin dosyanın özetini karşılaştırabilirsin:
+
+```powershell
+Get-FileHash EarthStudio-Kurulum.exe
+```
+
+### Linux ve macOS
+
+Releases sayfasındaki `earth-studio-linux-x64.tar.gz` ya da
+`earth-studio-macos-arm64.tar.gz` arşivini aç ve `earth-studio` programını
+çalıştır. Bu sistemlerde Studio yeni sürümleri haber verir ve indirme sayfasına
+yönlendirir.
+
+## Sık sorulan sorular
+
+**Windows "Windows bilgisayarınızı korudu" / "bilinmeyen yayımcı" diyor.**
+Kurulum dosyası henüz dijital olarak imzalı olmadığı için tarayıcıdan indirilen
+her yeni program gibi bu uyarıyı alabilir; zararlı olduğu anlamına gelmez.
+**Ek bilgi → Yine de çalıştır** ile devam edebilir ya da uyarı göstermeyen tek
+satırlık PowerShell kurulumunu kullanabilirsin. İmzalama planı:
+[docs/imzalama.md](docs/imzalama.md).
+
+**Programlarım nerede duruyor?** Varsayılan olarak `Belgeler\Earth`
+klasöründe. İstediğin klasörü **📂 Klasör Aç** ile açabilirsin.
+
+**Türkçe karakterler bozuk görünüyor.** Dosyayı başka bir editörle
+yazdıysan **UTF-8** olarak kaydet. Earth Studio dosyaları her zaman UTF-8
+kaydeder.
+
+**Türkçe harfsiz bir klavyem var.** Her anahtar kelimenin ASCII yazımı
+vardır: `eger`, `degilse`, `degisken`, `dondur`, `icinde`, `buyuk_harf`…
+
+**Otomatik güncellemeyi kapatmak istiyorum.** `EARTH_STUDIO_NO_UPDATE`
+ortam değişkenini `1` yap. Kurumsal bilgisayarlar için uygundur.
+
+**Studio açılmıyor ya da pencere boş görünüyor.** Studio önce DirectX 12
+ile çizmeyi dener, olmazsa kendini OpenGL ile yeniden başlatır. Yine de
+sorun olursa ekran kartı sürücülerini güncelle ya da
+`EARTH_STUDIO_RENDERER=glow` ortam değişkenini tanımla.
+
+**Studio benim hakkımda bilgi gönderiyor mu?** Hayır. Yalnızca GitHub'daki
+herkese açık sürüm bilgisini ve indirme sayısını okur.
+
+**Bir hata buldum ya da önerim var.**
+[Issues](https://github.com/MahmutSibal/earth-lang/issues) sayfasından
+bildirebilirsin.
+
+## Geliştiriciler için
+
+### Kaynaktan çalıştırmak
+
+[Rust](https://www.rust-lang.org/tools/install) kur, sonra:
+
+```bash
+cargo run -p earth-studio                                # Earth Studio'yu aç
+cargo run -p earth-studio -- examples/fizzbuzz.earth     # bir dosyayla aç
+```
+
+Windows'ta `link.exe not found` hatası alırsan **Visual Studio Build Tools**
+içinden **Desktop development with C++** iş yükünü kur.
+
+### Kontroller
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+Testler; dilin kendisini, `examples/` altındaki her programı ve bu
+README'deki her Earth örneğini kapsar. README'deki bir örneğin hemen
+ardından gelen `text` bloğu, o örneğin beklenen çıktısıdır ve testlerde
+karşılaştırılır.
+
+### Proje yapısı
+
+```text
+earth-lang/
+├── src/                  dil çekirdeği (yalnızca Rust standart kütüphanesi)
+│   ├── keywords.rs       çok dilli sözlük: anahtar kelimeler ve yerleşikler
+│   ├── messages.rs       kullanıcıya gösterilen bütün mesajlar, her dilde
+│   ├── lexer.rs          kaynak metni satır/sütun bilgili token'lara ayırır
+│   ├── parser.rs, ast.rs özyinelemeli iniş ayrıştırıcısı ve sözdizimi ağacı
+│   ├── interpreter.rs    ağaç gezen yorumlayıcı, kapsamlar, modüller
+│   ├── value.rs          değerler, listeler, sözlükler
+│   └── stdlib.rs         girdi/çıktı dışındaki yerleşik fonksiyonlar
+├── studio/               Earth Studio (egui)
+│   └── src/              arayüz, renklendirme, çalıştırıcı, güncelleyici
+├── examples/             örnek programlar (Studio'ya gömülür)
+├── editors/vscode/       VS Code sözdizimi renklendirme eklentisi
+├── windows/              simge, manifest, Inno Setup kurulum betiği
+├── install.ps1           tek satırlık Windows kurulumu
+└── docs/                 görseller ve imzalama rehberi
+```
+
+### Yeni sürüm yayınlamak
+
+1. `Cargo.toml` ve `studio/Cargo.toml` içindeki `version`'ı artır.
+2. Bir etiket gönder: `git tag v0.7.0 && git push origin v0.7.0`.
+3. `release` workflow'u Windows kurulum dosyasını, Linux/macOS arşivlerini ve
+   `SHA256SUMS.txt`'yi Releases sayfasına ekler.
+4. Kullanıcıların Earth Studio'su yeni sürümü kendiliğinden bulur ve kurar.
+
+GitHub Actions kullanılamıyorsa Windows kurulum dosyası Linux'ta da üretilebilir
+(MinGW-w64, Wine ve Wine altında kurulu
+[Inno Setup](https://jrsoftware.org/isinfo.php) gerekir):
+
+```bash
+rustup target add x86_64-pc-windows-gnu
+cargo build --release -p earth-studio --target x86_64-pc-windows-gnu
+cd windows && wine 'C:\InnoSetup\ISCC.exe' /DAppVersion=0.7.0 \
+  '/DStudioExe=..\target\x86_64-pc-windows-gnu\release\earth-studio.exe' installer.iss
+cd Output && sha256sum EarthStudio-Kurulum.exe > SHA256SUMS.txt
+```
+
+Ardından Releases'ta yeni bir sürüm oluşturup `EarthStudio-Kurulum.exe` ve
+`SHA256SUMS.txt`'yi yükle. **`SHA256SUMS.txt` olmadan Studio güncellemeyi
+güvenlik gereği kurmaz.**
+
+### Katkı rehberi
+
+**Yeni bir insan dili eklemek**
+
+1. `src/keywords.rs` içinde `Lang` enum'una yeni dili ekle; `KEYWORDS` ve
+   `BUILTINS` tablolarına o dilin yazımları için yeni bir sütun aç.
+2. `src/messages.rs` içinde tür adlarını ve mesajları o dile çevir; derleyici
+   eksik çevirileri gösterir. `studio/src/texts.rs` içinde arayüz metinlerini
+   ekle.
 
 Lexer, parser ve yorumlayıcıda değişiklik gerekmez.
 `spellings_are_unique_and_complete` testi çakışan ya da eksik yazımları yakalar.
 
-### Yeni bir yerleşik fonksiyon eklemek
+**Yeni bir yerleşik fonksiyon eklemek**
 
-1. `src/keywords.rs` içinde `Builtin` enum'una bir varyant ve `BUILTINS`
-   tablosuna yazımlarını ekleyin.
+1. `src/keywords.rs` içinde `Builtin` enum'una bir varyant, `BUILTINS`
+   tablosuna yazımlarını ekle.
 2. `src/stdlib.rs` içinde `arity` ve `call` fonksiyonlarına argüman sayısını
-   ve davranışı ekleyin.
-3. Editör renklendirmesini yeniden üretin:
+   ve davranışı ekle.
+3. Editör renklendirmesini yeniden üret:
    `python3 editors/vscode/gen_grammar.py src/keywords.rs editors/vscode/syntaxes/earth.tmLanguage.json`
-4. `src/lib.rs` içine testler ekleyin ve bu README'deki tabloyu güncelleyin.
+4. Testler ekle ve bu README'deki tabloyu güncelle.
 
-### Yeni bir sözdizimi eklemek
+**Yeni bir sözdizimi eklemek:** sırasıyla `keywords.rs` (gerekirse anahtar
+kelime), `lexer.rs` (yeni semboller), `ast.rs`, `parser.rs` ve
+`interpreter.rs` dosyalarını genişlet.
 
-Sırasıyla `keywords.rs` (gerekirse anahtar kelime), `lexer.rs` (yeni
-semboller), `ast.rs`, `parser.rs` ve `interpreter.rs` dosyalarını genişletin.
-Her `examples/*.earth` dosyası `tests/examples.rs` tarafından çalıştırılır.
+**VS Code eklentisi:** `editors/vscode` klasörü VS Code için sözdizimi
+renklendirme eklentisidir; kurulumu
+[editors/vscode/README.md](editors/vscode/README.md) dosyasında.
 
 ## Yol haritası
 
-- [x] Değişkenler ve temel değerler
-- [x] İfadeler ve aritmetik
-- [x] Koşullar ve döngüler
+- [x] Değişkenler, ifadeler, koşullar, döngüler
 - [x] Fonksiyonlar, özyineleme ve kapanışlar
-- [x] Listeler
-- [x] Konum bilgili hata mesajları ve REPL
-- [x] Sözlükler (anahtar-değer yapıları)
-- [x] Hata mesajlarının ve çıktının çok dilli olması
+- [x] Listeler ve sözlükler
+- [x] Konum bilgili, çok dilli hata mesajları
 - [x] Standart kütüphane (metin, matematik, liste)
 - [x] Hata yakalama (`dene` / `yakala` / `fırlat`)
-- [x] Modüller / dosya içe aktarma
-- [ ] Daha fazla insan dili
-- [x] Editör desteği (VS Code sözdizimi renklendirme)
-- [x] Windows kurulum programı (hoş geldin ekranı, masaüstü kısayolu, kaldırıcı)
-- [x] Otomatik güncelleme ve indirme sayacı
-- [x] Earth Studio: gezgin, sekmeli editör ve terminal içeren editör
-- [ ] Sınıflar / kullanıcı tanımlı türler
+- [x] Modüller (`içe_aktar`)
+- [x] Earth Studio: gezgin, sekmeli editör, terminal, REPL
+- [x] Windows kurulum programı, otomatik güncelleme
+- [x] VS Code sözdizimi renklendirme
 - [ ] Dosya okuma ve yazma
+- [ ] Sınıflar / kullanıcı tanımlı türler
+- [ ] Daha fazla insan dili
+- [ ] Studio'da otomatik tamamlama ve hata ayıklayıcı
 - [ ] Daha hızlı çalışma için bytecode derleyici
+
+## Lisans
+
+Earth [MIT lisansı](LICENSE) ile dağıtılır: ücretsizdir, kaynak kodu açıktır;
+kullanabilir, değiştirebilir ve paylaşabilirsin.
