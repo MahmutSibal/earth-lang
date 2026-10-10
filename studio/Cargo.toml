@@ -1,0 +1,15 @@
+[package]
+name = "earth-studio"
+version = "0.4.0"
+edition = "2021"
+description = "Earth Studio — Earth programlama dili için editör"
+license = "MIT"
+
+[[bin]]
+name = "earth-studio"
+path = "src/main.rs"
+
+[dependencies]
+earth = { path = ".." }
+eframe = { version = "0.36", features = ["glow"] }
+rfd = "0.17"

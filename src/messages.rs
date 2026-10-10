@@ -181,6 +181,8 @@ pub enum Message {
         error: String,
     },
     ImportCycle(String),
+    /// The program was stopped from outside, for example by a Stop button.
+    Interrupted,
 }
 
 impl Message {
@@ -311,6 +313,7 @@ impl Message {
             Message::ImportCycle(path) => {
                 format!("'{path}' kendini dolaylı olarak içe aktarıyor (döngüsel içe aktarma)")
             }
+            Message::Interrupted => "Program durduruldu".to_owned(),
         }
     }
 
@@ -437,6 +440,7 @@ impl Message {
             Message::Thrown(value) => format!("Uncaught error: {}", value.display(lang)),
             Message::ImportFailed { path, error } => format!("Could not import '{path}': {error}"),
             Message::ImportCycle(path) => format!("'{path}' imports itself (circular import)"),
+            Message::Interrupted => "Program stopped".to_owned(),
         }
     }
 }

@@ -477,4 +477,30 @@ yaz(ilk_çift([1, 3, 4, 5]))";
             .starts_with("'yok.earth' içe aktarılamadı"));
         std::fs::remove_dir_all(directory).unwrap();
     }
+
+    #[test]
+    fn stops_when_interrupted_even_inside_dene() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let flag = Arc::new(AtomicBool::new(false));
+        let setter = Arc::clone(&flag);
+        let stopper = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            setter.store(true, Ordering::Relaxed);
+        });
+
+        let mut output = Vec::new();
+        let mut input = std::io::empty();
+        let program =
+            super::parse("dene {\n  iken doğru { }\n} yakala { yaz(\"yakalandı\") }").unwrap();
+        let mut interpreter = super::Interpreter::new(&mut output, &mut input, Lang::Tr);
+        interpreter.set_interrupt(Arc::clone(&flag));
+        let error = interpreter.run(&program).unwrap_err();
+        drop(interpreter);
+        stopper.join().unwrap();
+
+        assert_eq!(error.text(Lang::Tr), "Program durduruldu");
+        assert!(output.is_empty());
+    }
 }
