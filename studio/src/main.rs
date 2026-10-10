@@ -12,6 +12,7 @@ mod files;
 mod highlight;
 mod runner;
 mod texts;
+mod update;
 mod workspace;
 
 use std::path::PathBuf;

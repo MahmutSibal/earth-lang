@@ -1,6 +1,6 @@
 [package]
 name = "earth-studio"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "Earth Studio — Earth programlama dili için editör"
 license = "MIT"
@@ -13,3 +13,7 @@ path = "src/main.rs"
 earth = { path = ".." }
 eframe = { version = "0.36", features = ["glow"] }
 rfd = "0.17"
+# Update checks: the system certificate store and, on Windows, the system proxy.
+ureq = { version = "3", features = ["platform-verifier", "win-system-proxy"] }
+sha2 = "0.11"
+serde_json = "1"

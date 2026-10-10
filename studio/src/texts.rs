@@ -40,6 +40,16 @@ pub struct Texts {
     pub already_exists: &'static str,
     pub earth_files: &'static str,
     pub welcome: &'static str,
+    pub downloads: &'static str,
+    pub downloads_hint: &'static str,
+    pub up_to_date: &'static str,
+    pub update_downloading: &'static str,
+    pub update_ready: &'static str,
+    pub update_now: &'static str,
+    pub update_later: &'static str,
+    pub update_available: &'static str,
+    pub update_download: &'static str,
+    pub check_updates: &'static str,
 }
 
 const TURKISH: Texts = Texts {
@@ -80,6 +90,16 @@ const TURKISH: Texts = Texts {
     already_exists: "Bu adda bir dosya zaten var",
     earth_files: "Earth programları",
     welcome: WELCOME_TR,
+    downloads: "⬇ {count} kişi indirdi",
+    downloads_hint: "Earth Studio'nun GitHub'dan toplam indirilme sayısı",
+    up_to_date: "Güncel",
+    update_downloading: "Güncelleme indiriliyor: {version} (%{percent})",
+    update_ready: "⬆ Earth Studio {version} hazır.",
+    update_now: "Yeniden başlat ve güncelle",
+    update_later: "Sonra",
+    update_available: "⬆ Earth Studio {version} yayınlandı.",
+    update_download: "İndir",
+    check_updates: "Güncellemeleri denetlemek için tıklayın",
 };
 
 const ENGLISH: Texts = Texts {
@@ -120,6 +140,16 @@ const ENGLISH: Texts = Texts {
     already_exists: "A file with this name already exists",
     earth_files: "Earth programs",
     welcome: WELCOME_EN,
+    downloads: "⬇ {count} downloads",
+    downloads_hint: "Total downloads of Earth Studio from GitHub",
+    up_to_date: "Up to date",
+    update_downloading: "Downloading update: {version} ({percent}%)",
+    update_ready: "⬆ Earth Studio {version} is ready.",
+    update_now: "Restart and update",
+    update_later: "Later",
+    update_available: "⬆ Earth Studio {version} is out.",
+    update_download: "Download",
+    check_updates: "Click to check for updates",
 };
 
 pub fn texts(lang: Lang) -> &'static Texts {

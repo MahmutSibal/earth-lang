@@ -84,3 +84,11 @@ Root: HKA; Subkey: "Software\Classes\EarthStudio.Program\shell\open\command"; Va
 
 [Run]
 Filename: "{app}\earth-studio.exe"; Description: "{cm:LaunchProgram,Earth Studio}"; Flags: nowait postinstall skipifsilent
+; Earth Studio's own updater passes /UPDATE: reopen Studio after updating.
+Filename: "{app}\earth-studio.exe"; Flags: nowait; Check: IsStudioUpdate
+
+[Code]
+function IsStudioUpdate: Boolean;
+begin
+  Result := Pos('/UPDATE', Uppercase(GetCmdTail)) > 0;
+end;
