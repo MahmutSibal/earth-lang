@@ -29,20 +29,58 @@ function fib(n) {
 print(fib(20))
 ```
 
-## İndir ve kullan
+## Kurulum
 
-Rust kurmaya gerek yok. [Releases](https://github.com/MahmutSibal/earth-lang/releases)
-sayfasından işletim sisteminize uygun dosyayı indirin:
+Rust kurmaya gerek yok.
 
-- **Windows:** `earth-windows-x64.zip` dosyasını açıp `earth.exe`'ye çift
-  tıklayın. Etkileşimli kabuk açılır. Bir programı çalıştırmak için:
-  `earth.exe program.earth`. `.earth` dosyalarını "Birlikte aç" ile
-  `earth.exe`'ye bağlarsanız çift tıklayarak çalıştırabilirsiniz.
-- **Linux / macOS:** arşivi açın ve `./earth program.earth` çalıştırın.
+### Windows (önerilen)
 
-Program dosyalarını UTF-8 olarak kaydedin. Windows SmartScreen imzasız
-programlar için "tanınmayan uygulama" uyarısı gösterebilir; "Ek bilgi" →
-"Yine de çalıştır" ile açılır.
+PowerShell'i açın ve şunu yapıştırın:
+
+```powershell
+irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1 | iex
+```
+
+[Kurulum betiği](install.ps1) şunları yapar:
+
+- En son sürümü indirir ve SHA-256 özetini doğrular.
+- `%LOCALAPPDATA%\Programs\Earth` klasörüne kurar; yönetici izni istemez.
+- PATH'e ekler: yeni bir terminalde `earth` yazmak yeterli olur.
+- `.earth` dosyalarını Earth ile açılacak şekilde bağlar.
+
+Bu yolla kurulan dosyalar Windows SmartScreen uyarısı göstermez.
+
+Kaldırmak için:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1))) -Uninstall
+```
+
+### Elle indirme
+
+[Releases](https://github.com/MahmutSibal/earth-lang/releases) sayfasından
+işletim sisteminize uygun arşivi indirin:
+
+- Windows: `earth-windows-x64.zip`
+- Linux: `earth-linux-x64.tar.gz`
+- macOS: `earth-macos-arm64.tar.gz`
+
+Dosyanın değiştirilmediğini, aynı sayfadaki `SHA256SUMS.txt` ile
+karşılaştırarak doğrulayabilirsiniz:
+
+```powershell
+Get-FileHash earth-windows-x64.zip   # Windows
+```
+
+```bash
+sha256sum -c SHA256SUMS.txt --ignore-missing   # Linux / macOS
+```
+
+`earth.exe` henüz dijital olarak imzalı değil. Bu yüzden tarayıcıdan indirilip
+açıldığında Windows "bilinmeyen yayımcı" uyarısı gösterebilir. Bu, imzasız her
+yeni program için görülen bir uyarıdır ve programın zararlı olduğu anlamına
+gelmez. Kaynak kodu bu depodadır ve herkes kendi exe'sini derleyebilir.
+İmzalama planı için [docs/imzalama.md](docs/imzalama.md) dosyasına bakın.
 
 ## Kaynaktan derleme
 
