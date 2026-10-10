@@ -8,6 +8,7 @@ pub mod error;
 pub mod interpreter;
 pub mod keywords;
 pub mod lexer;
+pub mod messages;
 pub mod parser;
 pub mod value;
 
@@ -15,34 +16,50 @@ use std::io::{BufRead, Write};
 
 pub use error::{Error, Position};
 pub use interpreter::Interpreter;
+pub use keywords::Lang;
 
 /// Parses a whole source file.
 pub fn parse(source: &str) -> Result<ast::Program, Error> {
     parser::parse(&lexer::lex(source)?)
 }
 
+/// The language a program is written in, judged by its keywords and
+/// built-in names. Earth answers in that language.
+pub fn detect_language(source: &str) -> Lang {
+    lexer::lex(source)
+        .map(|tokens| lexer::detect_language(&tokens))
+        .unwrap_or_default()
+}
+
 /// Runs a program, streaming its output to `output` and reading `girdi`
-/// from `input`.
+/// from `input`. Values such as `doğru`/`true` are printed in `lang`.
 pub fn run_with_io(
     source: &str,
     output: &mut dyn Write,
     input: &mut dyn BufRead,
+    lang: Lang,
 ) -> Result<(), Error> {
     let program = parse(source)?;
-    Interpreter::new(output, input).run(&program)?;
+    Interpreter::new(output, input, lang).run(&program)?;
     Ok(())
 }
 
-/// Runs a program with no input and returns everything it printed.
+/// Runs a program with no input, in its detected language, and returns
+/// everything it printed.
 pub fn run(source: &str) -> Result<String, Error> {
     let mut output = Vec::new();
-    run_with_io(source, &mut output, &mut std::io::empty())?;
+    run_with_io(
+        source,
+        &mut output,
+        &mut std::io::empty(),
+        detect_language(source),
+    )?;
     Ok(String::from_utf8(output).expect("Earth only writes UTF-8"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{run, run_with_io, Error, Position};
+    use super::{run, run_with_io, Error, Lang, Position};
 
     fn run_error(source: &str) -> Error {
         run(source).unwrap_err()
@@ -135,7 +152,7 @@ yaz(liste, uzunluk(liste), liste[-1])";
     fn scopes_block_variables() {
         let error = run_error("eğer doğru { değişken iç = 1 }\nyaz(iç)");
         assert_eq!(error.position, Some(Position::new(2, 5)));
-        assert!(error.message.starts_with("Tanımsız değişken 'iç'"));
+        assert!(error.text(Lang::Tr).starts_with("Tanımsız değişken 'iç'"));
     }
 
     #[test]
@@ -144,11 +161,14 @@ yaz(liste, uzunluk(liste), liste[-1])";
         assert_eq!(error.to_string(), "2:16: Sıfıra bölme");
 
         let error = run_error("yaz([1, 2][5])");
-        assert_eq!(error.message, "İndeks 5 sınırların dışında (uzunluk 2)");
+        assert_eq!(
+            error.text(Lang::Tr),
+            "İndeks 5 sınırların dışında (uzunluk 2)"
+        );
 
         let error = run_error("yaz(1 + doğru)");
         assert_eq!(
-            error.message,
+            error.text(Lang::Tr),
             "'+' işlemi 'sayı' ve 'mantıksal' türleri arasında yapılamaz"
         );
     }
@@ -156,7 +176,7 @@ yaz(liste, uzunluk(liste), liste[-1])";
     #[test]
     fn checks_function_arity() {
         let error = run_error("fonksiyon f(a, b) { }\nf(1)");
-        assert_eq!(error.message, "'f' 2 argüman bekliyor, 1 verildi");
+        assert_eq!(error.text(Lang::Tr), "'f' 2 argüman bekliyor, 1 verildi");
     }
 
     #[test]
@@ -167,7 +187,7 @@ yaz(liste, uzunluk(liste), liste[-1])";
             .spawn(|| run("fonksiyon f() { f() }\nf()").unwrap_err())
             .unwrap();
         let error = handle.join().unwrap();
-        assert!(error.message.starts_with("Çok derin özyineleme"));
+        assert!(error.text(Lang::Tr).starts_with("Çok derin özyineleme"));
     }
 
     #[test]
@@ -178,6 +198,7 @@ yaz(liste, uzunluk(liste), liste[-1])";
             "değişken ad = girdi(\"Adın? \")\nyaz(\"Merhaba \" + ad)\nyaz(girdi())",
             &mut output,
             &mut input,
+            Lang::Tr,
         )
         .unwrap();
         assert_eq!(
@@ -233,10 +254,39 @@ yaz({} == {}, {\"a\": 1, \"b\": 2} == {\"b\": 2, \"a\": 1})";
     fn reports_dictionary_errors() {
         let error = run_error("değişken s = {\"a\": 1}\nyaz(s[\"b\"])");
         assert_eq!(error.position, Some(Position::new(2, 6)));
-        assert!(error.message.starts_with("Sözlükte \"b\" anahtarı yok"));
+        assert!(error
+            .text(Lang::Tr)
+            .starts_with("Sözlükte \"b\" anahtarı yok"));
 
         let error = run_error("değişken s = {1: 2}");
         assert_eq!(error.position, Some(Position::new(1, 15)));
-        assert!(error.message.starts_with("Sözlük anahtarı metin olmalı"));
+        assert!(error
+            .text(Lang::Tr)
+            .starts_with("Sözlük anahtarı metin olmalı"));
+    }
+
+    #[test]
+    fn answers_in_the_language_of_the_program() {
+        assert_eq!(
+            run("print(1 == 1, nil, type([]))").unwrap(),
+            "true nil list\n"
+        );
+        assert_eq!(
+            run("yaz(1 == 1, boş, tür([]))").unwrap(),
+            "doğru boş liste\n"
+        );
+
+        let error = run_error("let x = 1\nprint(x + true)");
+        assert_eq!(
+            error.render(Lang::En),
+            "2:9: Cannot apply '+' to 'number' and 'bool'"
+        );
+        let error = run_error("if true {\n  break\n}");
+        assert_eq!(
+            error.text(Lang::En),
+            "'break' can only be used inside a loop"
+        );
+        let error = run_error("print(len(1, 2))");
+        assert_eq!(error.text(Lang::En), "'len' expects 1 argument, got 2");
     }
 }

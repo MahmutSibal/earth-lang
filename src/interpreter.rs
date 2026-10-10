@@ -3,8 +3,9 @@ use std::rc::Rc;
 
 use crate::ast::{BinaryOp, Expr, LogicalOp, Program, Stmt, UnaryOp};
 use crate::error::{Error, Position};
-use crate::keywords::{builtins, Builtin};
-use crate::value::{format_number, Dict, Env, Function, Scope, Value};
+use crate::keywords::{builtins, Builtin, Lang};
+use crate::messages::{Callee, Message, Type};
+use crate::value::{Dict, Env, Function, Scope, Value};
 
 /// Deep enough for ordinary recursion, shallow enough to report an error
 /// instead of overflowing the native stack (see `STACK_SIZE` in `main.rs`).
@@ -30,10 +31,12 @@ pub struct Interpreter<'io> {
     output: &'io mut dyn Write,
     input: &'io mut dyn BufRead,
     depth: usize,
+    /// The language values are printed in: `doğru` or `true`.
+    lang: Lang,
 }
 
 impl<'io> Interpreter<'io> {
-    pub fn new(output: &'io mut dyn Write, input: &'io mut dyn BufRead) -> Self {
+    pub fn new(output: &'io mut dyn Write, input: &'io mut dyn BufRead, lang: Lang) -> Self {
         let globals = Env::default();
         for (name, builtin) in builtins() {
             globals.borrow_mut().define(name, Value::Builtin(builtin));
@@ -43,7 +46,12 @@ impl<'io> Interpreter<'io> {
             output,
             input,
             depth: 0,
+            lang,
         }
+    }
+
+    pub fn lang(&self) -> Lang {
+        self.lang
     }
 
     /// Runs a program and returns the value of its last statement if that
@@ -91,7 +99,10 @@ impl<'io> Interpreter<'io> {
             } => {
                 let value = self.evaluate(value, env)?;
                 if !env.borrow_mut().assign(name, value) {
-                    return Err(undefined_variable(name, *position));
+                    return Err(Error::at(
+                        *position,
+                        Message::UndefinedVariable(name.clone()),
+                    ));
                 }
             }
             Stmt::IndexAssign {
@@ -116,10 +127,7 @@ impl<'io> Interpreter<'io> {
                     other => {
                         return Err(Error::at(
                             *position,
-                            format!(
-                            "Yalnızca liste ve sözlük elemanlarına atama yapılabilir, {} bulundu",
-                            other.type_name()
-                        ),
+                            Message::NotAssignable(other.value_type()),
                         ))
                     }
                 }
@@ -160,10 +168,7 @@ impl<'io> Interpreter<'io> {
                     other => {
                         return Err(Error::at(
                             *position,
-                            format!(
-                                "'{}' türündeki bir değer üzerinde döngü kurulamaz",
-                                other.type_name()
-                            ),
+                            Message::NotIterable(other.value_type()),
                         ))
                     }
                 };
@@ -225,7 +230,7 @@ impl<'io> Interpreter<'io> {
             Expr::Variable { name, position } => env
                 .borrow()
                 .get(name)
-                .ok_or_else(|| undefined_variable(name, *position)),
+                .ok_or_else(|| Error::at(*position, Message::UndefinedVariable(name.clone()))),
             Expr::Unary {
                 op,
                 operand,
@@ -237,7 +242,10 @@ impl<'io> Interpreter<'io> {
                     (UnaryOp::Negate, Value::Number(number)) => Ok(Value::Number(-number)),
                     (UnaryOp::Negate, operand) => Err(Error::at(
                         *position,
-                        format!("'-' işlemi '{}' türüne uygulanamaz", operand.type_name()),
+                        Message::InvalidOperand {
+                            op: "-",
+                            operand: operand.value_type(),
+                        },
                     )),
                 }
             }
@@ -249,7 +257,7 @@ impl<'io> Interpreter<'io> {
             } => {
                 let left = self.evaluate(left, env)?;
                 let right = self.evaluate(right, env)?;
-                binary(*op, left, right, *position)
+                self.binary(*op, left, right, *position)
             }
             Expr::Logical { op, left, right } => {
                 let left = self.evaluate(left, env)?;
@@ -296,17 +304,12 @@ impl<'io> Interpreter<'io> {
                         let key = dict_key(&index, *position)?;
                         let dict = dict.borrow();
                         dict.get(&key).cloned().ok_or_else(|| {
-                            Error::at(
-                                *position,
-                                format!(
-                                    "Sözlükte {key:?} anahtarı yok ('içerir' ile kontrol edebilirsiniz)"
-                                ),
-                            )
+                            Error::at(*position, Message::MissingKey(key.to_string()))
                         })
                     }
                     other => Err(Error::at(
                         *position,
-                        format!("'{}' türündeki bir değer indekslenemez", other.type_name()),
+                        Message::NotIndexable(other.value_type()),
                     )),
                 }
             }
@@ -325,28 +328,25 @@ impl<'io> Interpreter<'io> {
             other => {
                 return Err(Error::at(
                     position,
-                    format!("'{}' türündeki bir değer çağrılamaz", other.type_name()),
+                    Message::NotCallable(other.value_type()),
                 ))
             }
         };
 
         let decl = &function.decl;
         if arguments.len() != decl.parameters.len() {
+            let count = decl.parameters.len();
             return Err(Error::at(
                 position,
-                format!(
-                    "'{}' {} argüman bekliyor, {} verildi",
-                    decl.name,
-                    decl.parameters.len(),
-                    arguments.len()
-                ),
+                Message::WrongArity {
+                    callee: Callee::Function(decl.name.clone()),
+                    expected: (count, count),
+                    given: arguments.len(),
+                },
             ));
         }
         if self.depth >= MAX_CALL_DEPTH {
-            return Err(Error::at(
-                position,
-                format!("Çok derin özyineleme (en fazla {MAX_CALL_DEPTH} iç içe çağrı)"),
-            ));
+            return Err(Error::at(position, Message::RecursionLimit(MAX_CALL_DEPTH)));
         }
 
         let scope = Scope::new_child(&function.closure);
@@ -383,31 +383,40 @@ impl<'io> Interpreter<'io> {
             Builtin::Push | Builtin::Contains | Builtin::Remove => (2, 2),
         };
         if arguments.len() < min || arguments.len() > max {
-            let expected = if min == max {
-                min.to_string()
-            } else {
-                format!("{min}-{max}")
-            };
             return Err(Error::at(
                 position,
-                format!(
-                    "'{}' {expected} argüman bekliyor, {} verildi",
-                    builtin.name(),
-                    arguments.len()
-                ),
+                Message::WrongArity {
+                    callee: Callee::Builtin(builtin),
+                    expected: (min, max),
+                    given: arguments.len(),
+                },
             ));
         }
-        let io_error = |error: std::io::Error| Error::at(position, format!("G/Ç hatası: {error}"));
+        let io_error = |error: std::io::Error| Error::at(position, Message::Io(error.to_string()));
+        let wrong_argument = |expected: &'static [Type], given: &Value| {
+            Error::at(
+                position,
+                Message::WrongArgument {
+                    builtin,
+                    expected,
+                    given: given.value_type(),
+                },
+            )
+        };
+        let lang = self.lang;
 
         match builtin {
             Builtin::Print => {
-                let line: Vec<String> = arguments.iter().map(Value::to_string).collect();
+                let line: Vec<String> = arguments
+                    .iter()
+                    .map(|argument| argument.display(lang).to_string())
+                    .collect();
                 writeln!(self.output, "{}", line.join(" ")).map_err(io_error)?;
                 Ok(Value::Nil)
             }
             Builtin::Input => {
                 if let Some(prompt) = arguments.first() {
-                    write!(self.output, "{prompt}").map_err(io_error)?;
+                    write!(self.output, "{}", prompt.display(lang)).map_err(io_error)?;
                 }
                 self.output.flush().map_err(io_error)?;
                 let mut line = String::new();
@@ -421,13 +430,10 @@ impl<'io> Interpreter<'io> {
                 Value::String(text) => Ok(Value::Number(text.chars().count() as f64)),
                 Value::List(items) => Ok(Value::Number(items.borrow().len() as f64)),
                 Value::Dict(dict) => Ok(Value::Number(dict.borrow().len() as f64)),
-                other => Err(Error::at(
-                    position,
-                    format!("'{}' türünün uzunluğu yoktur", other.type_name()),
-                )),
+                other => Err(Error::at(position, Message::NoLength(other.value_type()))),
             },
             Builtin::Range => range(&arguments, position),
-            Builtin::ToText => Ok(Value::string(arguments[0].to_string())),
+            Builtin::ToText => Ok(Value::string(arguments[0].display(lang).to_string())),
             Builtin::ToNumber => Ok(match &arguments[0] {
                 Value::Number(number) => Value::Number(*number),
                 Value::String(text) => match text.trim().parse::<f64>() {
@@ -441,18 +447,12 @@ impl<'io> Interpreter<'io> {
                     items.borrow_mut().push(arguments[1].clone());
                     Ok(Value::Nil)
                 }
-                other => Err(Error::at(
-                    position,
-                    format!(
-                        "'ekle' ilk argüman olarak liste bekliyor, {} verildi",
-                        other.type_name()
-                    ),
-                )),
+                other => Err(wrong_argument(&[Type::List], other)),
             },
-            Builtin::Type => Ok(Value::string(arguments[0].type_name())),
+            Builtin::Type => Ok(Value::string(arguments[0].value_type().name(lang))),
             Builtin::Keys => match &arguments[0] {
                 Value::Dict(dict) => Ok(Value::list(dict_keys(&dict.borrow()))),
-                other => Err(expected_dict(builtin, other, position)),
+                other => Err(wrong_argument(&[Type::Dict], other)),
             },
             Builtin::Values => match &arguments[0] {
                 Value::Dict(dict) => Ok(Value::list(
@@ -461,7 +461,7 @@ impl<'io> Interpreter<'io> {
                         .map(|(_, value)| value.clone())
                         .collect(),
                 )),
-                other => Err(expected_dict(builtin, other, position)),
+                other => Err(wrong_argument(&[Type::Dict], other)),
             },
             Builtin::Contains => {
                 let needle = &arguments[1];
@@ -473,24 +473,10 @@ impl<'io> Interpreter<'io> {
                     },
                     Value::String(text) => match needle {
                         Value::String(part) => text.contains(&**part),
-                        other => {
-                            return Err(Error::at(
-                                position,
-                                format!(
-                                    "Metin içinde yalnızca metin aranabilir, {} verildi",
-                                    other.type_name()
-                                ),
-                            ))
-                        }
+                        other => return Err(wrong_argument(&[Type::Text], other)),
                     },
                     other => {
-                        return Err(Error::at(
-                            position,
-                            format!(
-                                "'içerir' liste, sözlük veya metin bekliyor, {} verildi",
-                                other.type_name()
-                            ),
-                        ))
+                        return Err(wrong_argument(&[Type::List, Type::Dict, Type::Text], other))
                     }
                 };
                 Ok(Value::Bool(found))
@@ -505,15 +491,62 @@ impl<'io> Interpreter<'io> {
                     let slot = list_index(&arguments[1], items.len(), position)?;
                     Ok(items.remove(slot))
                 }
-                other => Err(Error::at(
-                    position,
-                    format!(
-                        "'sil' liste veya sözlük bekliyor, {} verildi",
-                        other.type_name()
-                    ),
-                )),
+                other => Err(wrong_argument(&[Type::List, Type::Dict], other)),
             },
         }
+    }
+
+    fn binary(
+        &self,
+        op: BinaryOp,
+        left: Value,
+        right: Value,
+        position: Position,
+    ) -> Result<Value, Error> {
+        use Value::{List, Number, String};
+
+        let result = match (op, &left, &right) {
+            (BinaryOp::Equal, _, _) => Value::Bool(left == right),
+            (BinaryOp::NotEqual, _, _) => Value::Bool(left != right),
+
+            (BinaryOp::Add, Number(a), Number(b)) => Number(a + b),
+            (BinaryOp::Add, String(_), _) | (BinaryOp::Add, _, String(_)) => Value::string(
+                format!("{}{}", left.display(self.lang), right.display(self.lang)),
+            ),
+            (BinaryOp::Add, List(a), List(b)) => {
+                let mut items = a.borrow().clone();
+                items.extend(b.borrow().iter().cloned());
+                Value::list(items)
+            }
+            (BinaryOp::Subtract, Number(a), Number(b)) => Number(a - b),
+            (BinaryOp::Multiply, Number(a), Number(b)) => Number(a * b),
+            (BinaryOp::Divide | BinaryOp::Remainder, Number(_), Number(b)) if *b == 0.0 => {
+                return Err(Error::at(position, Message::DivisionByZero));
+            }
+            (BinaryOp::Divide, Number(a), Number(b)) => Number(a / b),
+            (BinaryOp::Remainder, Number(a), Number(b)) => Number(a % b),
+
+            (BinaryOp::Less, Number(a), Number(b)) => Value::Bool(a < b),
+            (BinaryOp::LessEqual, Number(a), Number(b)) => Value::Bool(a <= b),
+            (BinaryOp::Greater, Number(a), Number(b)) => Value::Bool(a > b),
+            (BinaryOp::GreaterEqual, Number(a), Number(b)) => Value::Bool(a >= b),
+            (BinaryOp::Less, String(a), String(b)) => Value::Bool(a < b),
+            (BinaryOp::LessEqual, String(a), String(b)) => Value::Bool(a <= b),
+            (BinaryOp::Greater, String(a), String(b)) => Value::Bool(a > b),
+            (BinaryOp::GreaterEqual, String(a), String(b)) => Value::Bool(a >= b),
+
+            _ => {
+                return Err(Error::at(
+                    position,
+                    Message::InvalidOperands {
+                        op: symbol(op),
+                        left: left.value_type(),
+                        right: right.value_type(),
+                    },
+                ))
+            }
+        };
+        Ok(result)
     }
 }
 
@@ -521,13 +554,7 @@ impl<'io> Interpreter<'io> {
 fn dict_key(key: &Value, position: Position) -> Result<Rc<str>, Error> {
     match key {
         Value::String(text) => Ok(Rc::clone(text)),
-        other => Err(Error::at(
-            position,
-            format!(
-                "Sözlük anahtarı metin olmalı, {} bulundu (gerekirse metin(...) kullanın)",
-                other.type_name()
-            ),
-        )),
+        other => Err(Error::at(position, Message::KeyNotText(other.value_type()))),
     }
 }
 
@@ -537,37 +564,16 @@ fn dict_keys(dict: &Dict) -> Vec<Value> {
         .collect()
 }
 
-fn expected_dict(builtin: Builtin, found: &Value, position: Position) -> Error {
-    Error::at(
-        position,
-        format!(
-            "'{}' sözlük bekliyor, {} verildi",
-            builtin.name(),
-            found.type_name()
-        ),
-    )
-}
-
-fn undefined_variable(name: &str, position: Position) -> Error {
-    Error::at(
-        position,
-        format!("Tanımsız değişken '{name}' (önce 'değişken {name} = ...' ile tanımlayın)"),
-    )
-}
-
 /// Converts an index value into a slot, counting negative indexes from the end.
 fn list_index(index: &Value, length: usize, position: Position) -> Result<usize, Error> {
     let Value::Number(number) = *index else {
         return Err(Error::at(
             position,
-            format!("İndeks sayı olmalı, {} bulundu", index.type_name()),
+            Message::IndexNotNumber(index.value_type()),
         ));
     };
     if number.fract() != 0.0 {
-        return Err(Error::at(
-            position,
-            format!("İndeks tam sayı olmalı, {} bulundu", format_number(number)),
-        ));
+        return Err(Error::at(position, Message::IndexNotWhole(number)));
     }
     let resolved = if number < 0.0 {
         length as f64 + number
@@ -577,10 +583,10 @@ fn list_index(index: &Value, length: usize, position: Position) -> Result<usize,
     if resolved < 0.0 || resolved >= length as f64 {
         return Err(Error::at(
             position,
-            format!(
-                "İndeks {} sınırların dışında (uzunluk {length})",
-                format_number(number)
-            ),
+            Message::IndexOutOfRange {
+                index: number,
+                length,
+            },
         ));
     }
     Ok(resolved as usize)
@@ -594,7 +600,11 @@ fn range(arguments: &[Value], position: Position) -> Result<Value, Error> {
             other => {
                 return Err(Error::at(
                     position,
-                    format!("'aralık' sayı bekliyor, {} verildi", other.type_name()),
+                    Message::WrongArgument {
+                        builtin: Builtin::Range,
+                        expected: &[Type::Number],
+                        given: other.value_type(),
+                    },
                 ))
             }
         }
@@ -606,68 +616,17 @@ fn range(arguments: &[Value], position: Position) -> Result<Value, Error> {
         _ => unreachable!("arity is checked by the caller"),
     };
     if step == 0.0 || !step.is_finite() {
-        return Err(Error::at(position, "'aralık' adımı sıfır olamaz"));
+        return Err(Error::at(position, Message::RangeStepZero));
     }
 
     let length = ((end - start) / step).ceil().max(0.0);
     if !length.is_finite() || length > MAX_RANGE_LENGTH as f64 {
-        return Err(Error::at(
-            position,
-            format!("'aralık' en fazla {MAX_RANGE_LENGTH} eleman üretebilir"),
-        ));
+        return Err(Error::at(position, Message::RangeTooLong(MAX_RANGE_LENGTH)));
     }
     let items = (0..length as usize)
         .map(|i| Value::Number(start + step * i as f64))
         .collect();
     Ok(Value::list(items))
-}
-
-fn binary(op: BinaryOp, left: Value, right: Value, position: Position) -> Result<Value, Error> {
-    use Value::{List, Number, String};
-
-    let result = match (op, &left, &right) {
-        (BinaryOp::Equal, _, _) => Value::Bool(left == right),
-        (BinaryOp::NotEqual, _, _) => Value::Bool(left != right),
-
-        (BinaryOp::Add, Number(a), Number(b)) => Number(a + b),
-        (BinaryOp::Add, String(_), _) | (BinaryOp::Add, _, String(_)) => {
-            Value::string(format!("{left}{right}"))
-        }
-        (BinaryOp::Add, List(a), List(b)) => {
-            let mut items = a.borrow().clone();
-            items.extend(b.borrow().iter().cloned());
-            Value::list(items)
-        }
-        (BinaryOp::Subtract, Number(a), Number(b)) => Number(a - b),
-        (BinaryOp::Multiply, Number(a), Number(b)) => Number(a * b),
-        (BinaryOp::Divide | BinaryOp::Remainder, Number(_), Number(b)) if *b == 0.0 => {
-            return Err(Error::at(position, "Sıfıra bölme"));
-        }
-        (BinaryOp::Divide, Number(a), Number(b)) => Number(a / b),
-        (BinaryOp::Remainder, Number(a), Number(b)) => Number(a % b),
-
-        (BinaryOp::Less, Number(a), Number(b)) => Value::Bool(a < b),
-        (BinaryOp::LessEqual, Number(a), Number(b)) => Value::Bool(a <= b),
-        (BinaryOp::Greater, Number(a), Number(b)) => Value::Bool(a > b),
-        (BinaryOp::GreaterEqual, Number(a), Number(b)) => Value::Bool(a >= b),
-        (BinaryOp::Less, String(a), String(b)) => Value::Bool(a < b),
-        (BinaryOp::LessEqual, String(a), String(b)) => Value::Bool(a <= b),
-        (BinaryOp::Greater, String(a), String(b)) => Value::Bool(a > b),
-        (BinaryOp::GreaterEqual, String(a), String(b)) => Value::Bool(a >= b),
-
-        _ => {
-            return Err(Error::at(
-                position,
-                format!(
-                    "'{}' işlemi '{}' ve '{}' türleri arasında yapılamaz",
-                    symbol(op),
-                    left.type_name(),
-                    right.type_name()
-                ),
-            ))
-        }
-    };
-    Ok(result)
 }
 
 fn symbol(op: BinaryOp) -> &'static str {

@@ -142,6 +142,18 @@ fonksiyon sayaç_yap() {
   yayılabilir.
 - `değilse`, kapanan `}` ile aynı satırda ya da bir sonraki satırda olabilir.
 
+### Çıktı dili
+
+Earth, programın hangi dilde yazıldığını anahtar kelimelerinden anlar ve o
+dilde cevap verir. İngilizce yazılmış bir program `true`, `nil` ve İngilizce
+hata mesajları görür; Türkçe yazılmış bir program `doğru`, `boş` ve Türkçe
+hata mesajları görür. Bu davranış `--dil` (veya `--lang`) ile değiştirilebilir:
+
+```bash
+earth --dil en program.earth
+earth --lang tr program.earth
+```
+
 ### Hata mesajları
 
 Hatalar dosya, satır ve sütun bilgisiyle birlikte gösterilir:
@@ -157,6 +169,7 @@ Earth hatası: program.earth:2:14: '*' işlemi 'metin' ve 'sayı' türleri aras�
 
 - **`src/keywords.rs`:** dilin çok dilli sözlüğü. Anahtar kelimelerin ve
   yerleşik fonksiyonların bütün yazımları buradadır.
+- **`src/messages.rs`:** kullanıcıya gösterilen bütün mesajlar, her dilde.
 - **`src/lexer.rs`:** kaynak metni satır/sütun bilgili token'lara ayırır.
 - **`src/parser.rs`, `src/ast.rs`:** öncelik sıralı özyinelemeli iniş
   (recursive descent) ayrıştırıcı ve sözdizimi ağacı. `kır` / `döndür` gibi
@@ -186,9 +199,13 @@ cargo run -- examples\hello.earth
 
 ### Yeni bir insan dili eklemek
 
-`src/keywords.rs` içindeki `KEYWORDS` ve `BUILTINS` tablolarına yeni dildeki
-yazımları ekleyin. Lexer, parser ve yorumlayıcıda değişiklik gerekmez.
-`spellings_are_unique` testi çakışan yazımları yakalar.
+1. `src/keywords.rs` içinde `Lang` enum'una yeni dili ekleyin ve `KEYWORDS` ile
+   `BUILTINS` tablolarına o dilin yazımları için yeni bir sütun açın.
+2. `src/messages.rs` içinde tür adlarını, mesajları ve CLI metinlerini o dile
+   çevirin. Derleyici eksik çevirileri gösterir.
+
+Lexer, parser ve yorumlayıcıda değişiklik gerekmez.
+`spellings_are_unique_and_complete` testi çakışan ya da eksik yazımları yakalar.
 
 ### Yeni bir yerleşik fonksiyon eklemek
 
@@ -213,7 +230,7 @@ Her `examples/*.earth` dosyası `tests/examples.rs` tarafından çalıştırıl�
 - [x] Listeler
 - [x] Konum bilgili hata mesajları ve REPL
 - [x] Sözlükler (anahtar-değer yapıları)
-- [ ] Hata mesajlarının da çok dilli olması
+- [x] Hata mesajlarının ve çıktının çok dilli olması
 - [ ] Modüller / dosya içe aktarma
 - [ ] Daha fazla insan dili
 - [ ] Editör desteği (sözdizimi renklendirme)

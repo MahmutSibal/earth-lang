@@ -4,7 +4,8 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::ast::FunctionDecl;
-use crate::keywords::Builtin;
+use crate::keywords::{Builtin, Keyword, Lang};
+use crate::messages::Type;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -42,25 +43,21 @@ impl Value {
         !matches!(self, Value::Nil | Value::Bool(false))
     }
 
-    pub fn type_name(&self) -> &'static str {
+    pub fn value_type(&self) -> Type {
         match self {
-            Value::Nil => "boş",
-            Value::Bool(_) => "mantıksal",
-            Value::Number(_) => "sayı",
-            Value::String(_) => "metin",
-            Value::List(_) => "liste",
-            Value::Dict(_) => "sözlük",
-            Value::Function(_) | Value::Builtin(_) => "fonksiyon",
+            Value::Nil => Type::Nil,
+            Value::Bool(_) => Type::Bool,
+            Value::Number(_) => Type::Number,
+            Value::String(_) => Type::Text,
+            Value::List(_) => Type::List,
+            Value::Dict(_) => Type::Dict,
+            Value::Function(_) | Value::Builtin(_) => Type::Function,
         }
     }
 
-    /// The text shown inside lists and dictionaries, where strings keep
-    /// their quotes.
-    fn repr(&self) -> String {
-        match self {
-            Value::String(text) => format!("{text:?}"),
-            other => other.to_string(),
-        }
+    /// The value as `yaz` prints it, in `lang`: `doğru` or `true`.
+    pub fn display(&self, lang: Lang) -> Displayed<'_> {
+        Displayed { value: self, lang }
     }
 }
 
@@ -80,19 +77,36 @@ impl PartialEq for Value {
     }
 }
 
-impl fmt::Display for Value {
+/// A value paired with the language it is shown in.
+pub struct Displayed<'a> {
+    value: &'a Value,
+    lang: Lang,
+}
+
+impl Displayed<'_> {
+    /// Inside lists and dictionaries strings keep their quotes.
+    fn repr(&self, value: &Value) -> String {
+        match value {
+            Value::String(text) => format!("{text:?}"),
+            other => other.display(self.lang).to_string(),
+        }
+    }
+}
+
+impl fmt::Display for Displayed<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Nil => write!(f, "boş"),
-            Value::Bool(true) => write!(f, "doğru"),
-            Value::Bool(false) => write!(f, "yanlış"),
+        let lang = self.lang;
+        match self.value {
+            Value::Nil => write!(f, "{}", Keyword::Nil.name(lang)),
+            Value::Bool(true) => write!(f, "{}", Keyword::True.name(lang)),
+            Value::Bool(false) => write!(f, "{}", Keyword::False.name(lang)),
             Value::Number(number) => write!(f, "{}", format_number(*number)),
             Value::String(text) => write!(f, "{text}"),
             Value::List(items) => {
                 let Some(_guard) = CycleGuard::enter(Rc::as_ptr(items).cast()) else {
                     return write!(f, "[...]");
                 };
-                let items: Vec<String> = items.borrow().iter().map(Value::repr).collect();
+                let items: Vec<String> = items.borrow().iter().map(|v| self.repr(v)).collect();
                 write!(f, "[{}]", items.join(", "))
             }
             Value::Dict(dict) => {
@@ -102,13 +116,24 @@ impl fmt::Display for Value {
                 let entries: Vec<String> = dict
                     .borrow()
                     .iter()
-                    .map(|(key, value)| format!("{key:?}: {}", value.repr()))
+                    .map(|(key, value)| format!("{key:?}: {}", self.repr(value)))
                     .collect();
                 write!(f, "{{{}}}", entries.join(", "))
             }
-            Value::Function(function) => write!(f, "<fonksiyon {}>", function.decl.name),
-            Value::Builtin(builtin) => write!(f, "<fonksiyon {}>", builtin.name()),
+            Value::Function(function) => {
+                write!(f, "<{} {}>", Type::Function.name(lang), function.decl.name)
+            }
+            Value::Builtin(builtin) => {
+                write!(f, "<{} {}>", Type::Function.name(lang), builtin.name(lang))
+            }
         }
+    }
+}
+
+/// Shows the value in Turkish; use [`Value::display`] for other languages.
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.display(Lang::Tr).fmt(f)
     }
 }
 
@@ -256,6 +281,7 @@ impl Scope {
 #[cfg(test)]
 mod tests {
     use super::{format_number, Dict, Value};
+    use crate::keywords::Lang;
 
     #[test]
     fn formats_whole_numbers_without_decimals() {
@@ -299,5 +325,12 @@ mod tests {
             entries.borrow_mut().insert("ben".into(), dict.clone());
         }
         assert_eq!(dict.to_string(), "{\"ben\": {...}}");
+    }
+
+    #[test]
+    fn displays_values_in_each_language() {
+        let value = Value::list(vec![Value::Bool(true), Value::Nil]);
+        assert_eq!(value.display(Lang::Tr).to_string(), "[doğru, boş]");
+        assert_eq!(value.display(Lang::En).to_string(), "[true, nil]");
     }
 }

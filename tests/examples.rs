@@ -5,7 +5,8 @@ use std::fs;
 fn run_example(name: &str, input: &str) -> String {
     let source = fs::read_to_string(format!("examples/{name}")).unwrap();
     let mut output = Vec::new();
-    earth::run_with_io(&source, &mut output, &mut input.as_bytes()).unwrap();
+    let lang = earth::detect_language(&source);
+    earth::run_with_io(&source, &mut output, &mut input.as_bytes(), lang).unwrap();
     String::from_utf8(output).unwrap()
 }
 

@@ -1,7 +1,9 @@
 use std::io::{self, BufRead, Write};
 use std::{env, fs, process, thread};
 
-use earth::{Error, Interpreter};
+use earth::messages::cli;
+use earth::value::Value;
+use earth::{Error, Interpreter, Lang};
 
 /// The interpreter recurses on the native stack; give deep Earth recursion
 /// (up to `MAX_CALL_DEPTH`) enough room, even in debug builds.
@@ -17,51 +19,101 @@ fn main() {
     process::exit(code);
 }
 
+struct Options {
+    lang: Option<Lang>,
+    path: Option<String>,
+}
+
 fn start() -> i32 {
-    let mut arguments = env::args().skip(1);
-    match (arguments.next(), arguments.next()) {
-        (None, _) => repl(),
-        (Some(flag), None) if flag == "-h" || flag == "--help" || flag == "--yardım" => {
-            println!("Kullanım: earth [kaynak-dosyası.earth]");
-            println!("Dosya verilmezse etkileşimli kabuk (REPL) açılır.");
-            0
-        }
-        (Some(path), None) => run_file(&path),
-        _ => {
-            eprintln!("Kullanım: earth [kaynak-dosyası.earth]");
-            2
-        }
+    let options = match parse_arguments(env::args().skip(1)) {
+        Ok(Some(options)) => options,
+        Ok(None) => return 0,
+        Err(code) => return code,
+    };
+    match options.path {
+        Some(path) => run_file(&path, options.lang),
+        None => repl(options.lang.unwrap_or_default()),
     }
 }
 
-fn run_file(path: &str) -> i32 {
+/// Returns `Ok(None)` when the program should exit successfully, such as
+/// after printing help.
+fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Option<Options>, i32> {
+    let mut options = Options {
+        lang: None,
+        path: None,
+    };
+    let mut arguments = arguments.peekable();
+    while let Some(argument) = arguments.next() {
+        // Messages before the language is known use the one asked for so
+        // far, or Turkish.
+        let lang = options.lang.unwrap_or_default();
+        match argument.as_str() {
+            "-h" | "--help" | "--yardım" | "--yardim" => {
+                println!("{}", cli::usage(lang));
+                println!("{}", cli::help(lang));
+                return Ok(None);
+            }
+            "-v" | "--version" | "--sürüm" | "--surum" => {
+                println!("Earth {}", env!("CARGO_PKG_VERSION"));
+                return Ok(None);
+            }
+            "--dil" | "--lang" => {
+                let Some(code) = arguments.next() else {
+                    eprintln!("{}", cli::usage(lang));
+                    return Err(2);
+                };
+                match Lang::from_code(&code) {
+                    Some(chosen) => options.lang = Some(chosen),
+                    None => {
+                        eprintln!("{}", cli::unknown_language(lang, &code));
+                        return Err(2);
+                    }
+                }
+            }
+            _ if options.path.is_none() && !argument.starts_with('-') => {
+                options.path = Some(argument);
+            }
+            _ => {
+                eprintln!("{}", cli::usage(lang));
+                return Err(2);
+            }
+        }
+    }
+    Ok(Some(options))
+}
+
+fn run_file(path: &str, lang: Option<Lang>) -> i32 {
     let source = match fs::read_to_string(path) {
         Ok(source) => source,
         Err(error) => {
-            eprintln!("'{path}' okunamadı: {error}");
+            let lang = lang.unwrap_or_default();
+            eprintln!("{}", cli::cannot_read(lang, path, &error));
             return 1;
         }
     };
+    let lang = lang.unwrap_or_else(|| earth::detect_language(&source));
 
     let stdout = io::stdout();
     let stdin = io::stdin();
-    let result = earth::run_with_io(&source, &mut stdout.lock(), &mut stdin.lock());
+    let result = earth::run_with_io(&source, &mut stdout.lock(), &mut stdin.lock(), lang);
     match result {
         Ok(()) => 0,
         Err(error) => {
-            report(path, &source, &error);
+            report(path, &source, &error, lang);
             1
         }
     }
 }
 
 /// Prints an error with the offending source line and a caret under it.
-fn report(path: &str, source: &str, error: &Error) {
+fn report(path: &str, source: &str, error: &Error, lang: Lang) {
+    let prefix = cli::error_prefix(lang);
     let Some(position) = error.position else {
-        eprintln!("Earth hatası: {}", error.message);
+        eprintln!("{prefix}: {}", error.text(lang));
         return;
     };
-    eprintln!("Earth hatası: {path}:{position}: {}", error.message);
+    eprintln!("{prefix}: {path}:{position}: {}", error.text(lang));
     if let Some(line) = source.lines().nth(position.line - 1) {
         let gutter = position.line.to_string();
         let padding: String = line
@@ -75,14 +127,14 @@ fn report(path: &str, source: &str, error: &Error) {
     }
 }
 
-fn repl() -> i32 {
-    println!("Earth {} — çıkmak için Ctrl+D", env!("CARGO_PKG_VERSION"));
+fn repl(lang: Lang) -> i32 {
+    println!("{}", cli::repl_banner(lang, env!("CARGO_PKG_VERSION")));
 
     let mut stdout = io::stdout();
     let mut stdin = io::stdin().lock();
     // `girdi` inside the REPL reads from the same terminal.
     let mut program_input = io::BufReader::new(io::stdin());
-    let mut interpreter = Interpreter::new(&mut stdout, &mut program_input);
+    let mut interpreter = Interpreter::new(&mut stdout, &mut program_input, lang);
 
     let mut buffer = String::new();
     loop {
@@ -102,7 +154,7 @@ fn repl() -> i32 {
             }
             Ok(_) => buffer.push_str(&line),
             Err(error) => {
-                eprintln!("Okuma hatası: {error}");
+                eprintln!("{}: {error}", cli::repl_error(lang));
                 return 1;
             }
         }
@@ -112,20 +164,20 @@ fn repl() -> i32 {
         }
 
         match earth::parse(&buffer).and_then(|program| interpreter.run(&program)) {
-            Ok(Some(value)) if !matches!(value, earth::value::Value::Nil) => {
-                println!("{}", repr(&value));
+            Ok(Some(value)) if !matches!(value, Value::Nil) => {
+                println!("{}", repr(&value, interpreter.lang()));
             }
             Ok(_) => {}
-            Err(error) => eprintln!("Hata: {error}"),
+            Err(error) => eprintln!("{}: {}", cli::repl_error(lang), error.render(lang)),
         }
         buffer.clear();
     }
 }
 
-fn repr(value: &earth::value::Value) -> String {
+fn repr(value: &Value, lang: Lang) -> String {
     match value {
-        earth::value::Value::String(text) => format!("{text:?}"),
-        other => other.to_string(),
+        Value::String(text) => format!("{text:?}"),
+        other => other.display(lang).to_string(),
     }
 }
 
