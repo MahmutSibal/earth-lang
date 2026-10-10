@@ -3,6 +3,8 @@ use std::fs;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::ast::{BinaryOp, Expr, LogicalOp, Program, Stmt, UnaryOp};
 use crate::error::{Error, Position};
@@ -43,6 +45,8 @@ pub struct Interpreter<'io> {
     loading: Vec<Module>,
     /// The definitions of every module loaded so far, by canonical path.
     modules: HashMap<PathBuf, Vec<(String, Value)>>,
+    /// Set from another thread to stop the program, e.g. by a Stop button.
+    interrupt: Option<Arc<AtomicBool>>,
 }
 
 struct Module {
@@ -68,6 +72,7 @@ impl<'io> Interpreter<'io> {
             base_dir: PathBuf::new(),
             loading: Vec::new(),
             modules: HashMap::new(),
+            interrupt: None,
         }
     }
 
@@ -75,6 +80,23 @@ impl<'io> Interpreter<'io> {
     /// the directory of the main program.
     pub fn set_base_dir(&mut self, directory: impl Into<PathBuf>) {
         self.base_dir = directory.into();
+    }
+
+    /// Lets another thread stop the program: once `flag` is set, the next
+    /// statement, loop iteration or call fails with [`Message::Interrupted`],
+    /// which `dene` cannot catch. The flag is left set; clear it before
+    /// running again.
+    pub fn set_interrupt(&mut self, flag: Arc<AtomicBool>) {
+        self.interrupt = Some(flag);
+    }
+
+    fn check_interrupt(&self) -> Result<(), Error> {
+        match &self.interrupt {
+            Some(flag) if flag.load(Ordering::Relaxed) => {
+                Err(Error::without_position(Message::Interrupted))
+            }
+            _ => Ok(()),
+        }
     }
 
     pub fn lang(&self) -> Lang {
@@ -111,6 +133,7 @@ impl<'io> Interpreter<'io> {
     }
 
     fn execute(&mut self, statement: &Stmt, env: &Env) -> Result<Flow, Error> {
+        self.check_interrupt()?;
         match statement {
             Stmt::Expression(expression) => {
                 self.evaluate(expression, env)?;
@@ -173,6 +196,8 @@ impl<'io> Interpreter<'io> {
             }
             Stmt::While { condition, body } => {
                 while self.evaluate(condition, env)?.is_truthy() {
+                    // An empty body runs no statements, so check here too.
+                    self.check_interrupt()?;
                     match self.execute_block(body, &Scope::new_child(env))? {
                         Flow::Break => break,
                         Flow::Normal | Flow::Continue => {}
@@ -200,6 +225,7 @@ impl<'io> Interpreter<'io> {
                     }
                 };
                 for item in items {
+                    self.check_interrupt()?;
                     let scope = Scope::new_child(env);
                     scope.borrow_mut().define(variable.clone(), item);
                     match self.execute_block(body, &scope)? {
@@ -232,6 +258,8 @@ impl<'io> Interpreter<'io> {
             } => {
                 let error = match self.execute_block(body, &Scope::new_child(env)) {
                     Ok(flow) => return Ok(flow),
+                    // Stopping the program is not an error the program handles.
+                    Err(error) if error.message == Message::Interrupted => return Err(error),
                     Err(error) => error,
                 };
                 let scope = Scope::new_child(env);

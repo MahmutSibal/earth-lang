@@ -40,6 +40,15 @@ impl Error {
         }
     }
 
+    /// An error that belongs to no particular place in the source.
+    pub fn without_position(message: Message) -> Self {
+        Self {
+            message,
+            position: None,
+            file: None,
+        }
+    }
+
     /// Records that the error happened in `file`, unless a more deeply
     /// imported file was already recorded.
     pub fn in_file(mut self, file: &Path) -> Self {

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="Earth" width="320">
+</p>
+
 # Earth — Kendi Dünyan, Kendi Kodlaman
 
 Earth, anahtar kelimeleri birden fazla insan dilinde yazılabilen küçük bir
@@ -29,6 +33,26 @@ function fib(n) {
 print(fib(20))
 ```
 
+## Earth Studio
+
+Earth kendi editörüyle gelir: solda dosya gezgini, ortada sekmeli ve renkli
+kod editörü, altta programın çıktısının göründüğü terminal.
+
+![Earth Studio](docs/studio.png)
+
+- **▶ Çalıştır (F5):** programı çalıştırır. Çıktı terminalde anında görünür;
+  `girdi` terminale yazılanı okur.
+- **⏹ Durdur (Shift+F5):** sonsuz döngüye giren programı durdurur.
+- **Hata gösterimi:** hata veren satır editörde kırmızıyla işaretlenir.
+- **REPL:** program çalışmıyorken terminale Earth komutları yazılabilir.
+- **Dosya işlemleri:** klasör açma, yeni dosya, kaydetme (Ctrl+S).
+  Kaydedilmemiş değişiklikler kapatırken sorulur.
+- **Arayüz dili:** Türkçe ya da İngilizce.
+
+Windows'ta kurulumdan sonra Başlat menüsünden **Earth Studio** ile açılır;
+`.earth` dosyalarına çift tıklamak da onları Studio'da açar.
+Kaynaktan çalıştırmak için: `cargo run -p earth-studio`.
+
 ## Kurulum
 
 Rust kurmaya gerek yok.
@@ -45,8 +69,10 @@ irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1 | 
 
 - En son sürümü indirir ve SHA-256 özetini doğrular.
 - `%LOCALAPPDATA%\Programs\Earth` klasörüne kurar; yönetici izni istemez.
+- Başlat menüsüne **Earth Studio** kısayolunu ekler.
 - PATH'e ekler: yeni bir terminalde `earth` yazmak yeterli olur.
-- `.earth` dosyalarını Earth ile açılacak şekilde bağlar.
+- `.earth` dosyalarını bağlar: çift tıklayınca Studio'da açılır, sağ tık
+  menüsündeki **Earth ile çalıştır** ile doğrudan çalışır.
 
 Bu yolla kurulan dosyalar Windows SmartScreen uyarısı göstermez.
 
@@ -103,7 +129,7 @@ Linux'tan Windows için `earth.exe` üretmek (MinGW-w64 gerekir):
 ```bash
 sudo apt install gcc-mingw-w64-x86-64
 rustup target add x86_64-pc-windows-gnu
-cargo build --release --target x86_64-pc-windows-gnu
+cargo build --release --workspace --target x86_64-pc-windows-gnu
 ```
 
 Yeni bir sürüm yayınlamak için bir etiket gönderin
@@ -113,9 +139,9 @@ Windows, Linux ve macOS arşivlerini Releases sayfasına ekler.
 Kontroller:
 
 ```bash
-cargo fmt -- --check
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 ```
 
 ## Dil rehberi
@@ -317,8 +343,12 @@ bakın.
   kapsamlar, hata yakalama ve modüller.
 - **`src/stdlib.rs`:** girdi/çıktı dışındaki yerleşik fonksiyonlar.
 - **`src/main.rs`:** dosya çalıştırıcı, hata raporlama ve REPL.
+- **`studio/`:** Earth Studio editörü (egui). Programları ayrı bir iş
+  parçacığında çalıştırır ve yorumlayıcının `set_interrupt` desteğiyle
+  durdurur. Dil çekirdeği (`src/`) bağımlılıksız kalır; grafik
+  kütüphaneleri yalnızca Studio'da kullanılır.
 
-Proje yalnızca Rust standart kütüphanesini kullanır.
+Dil çekirdeği yalnızca Rust standart kütüphanesini kullanır.
 
 ### Windows notu
 
@@ -379,6 +409,7 @@ Her `examples/*.earth` dosyası `tests/examples.rs` tarafından çalıştırıl�
 - [ ] Daha fazla insan dili
 - [x] Editör desteği (VS Code sözdizimi renklendirme)
 - [x] İndirilebilir Windows `earth.exe`
+- [x] Earth Studio: gezgin, sekmeli editör ve terminal içeren editör
 - [ ] Sınıflar / kullanıcı tanımlı türler
 - [ ] Dosya okuma ve yazma
 - [ ] Daha hızlı çalışma için bytecode derleyici
