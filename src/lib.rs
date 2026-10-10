@@ -1,39 +1,197 @@
+//! Earth — Kendi Dünyan, Kendi Kodlaman.
+//!
+//! The pipeline is `lexer` → `parser` → `interpreter`. Keywords and built-in
+//! names in every supported human language live in `keywords`.
+
 pub mod ast;
+pub mod error;
 pub mod interpreter;
+pub mod keywords;
 pub mod lexer;
 pub mod parser;
+pub mod value;
 
-pub fn run(source: &str) -> Result<Vec<String>, String> {
-    let tokens = lexer::lex(source)?;
-    let program = parser::parse(&tokens)?;
-    interpreter::interpret(&program)
+use std::io::{BufRead, Write};
+
+pub use error::{Error, Position};
+pub use interpreter::Interpreter;
+
+/// Parses a whole source file.
+pub fn parse(source: &str) -> Result<ast::Program, Error> {
+    parser::parse(&lexer::lex(source)?)
+}
+
+/// Runs a program, streaming its output to `output` and reading `girdi`
+/// from `input`.
+pub fn run_with_io(
+    source: &str,
+    output: &mut dyn Write,
+    input: &mut dyn BufRead,
+) -> Result<(), Error> {
+    let program = parse(source)?;
+    Interpreter::new(output, input).run(&program)?;
+    Ok(())
+}
+
+/// Runs a program with no input and returns everything it printed.
+pub fn run(source: &str) -> Result<String, Error> {
+    let mut output = Vec::new();
+    run_with_io(source, &mut output, &mut std::io::empty())?;
+    Ok(String::from_utf8(output).expect("Earth only writes UTF-8"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::run;
+    use super::{run, run_with_io, Error, Position};
+
+    fn run_error(source: &str) -> Error {
+        run(source).unwrap_err()
+    }
 
     #[test]
-    fn runs_turkish_print_alias() {
+    fn runs_turkish_and_english_print_aliases() {
         assert_eq!(
-            run("yaz(\"Merhaba, Earth!\")").unwrap(),
-            vec!["Merhaba, Earth!"]
+            run("yaz(\"Merhaba, Earth!\")\nprint(\"Hello, Earth!\")").unwrap(),
+            "Merhaba, Earth!\nHello, Earth!\n"
         );
     }
 
     #[test]
-    fn runs_english_print_alias() {
+    fn mixes_languages_in_one_program() {
+        let source = "\
+let sayaç = 0
+iken sayaç < 3 {
+    sayaç = sayaç + 1
+}
+if sayaç == 3 { yaz(\"tamam\") } else { print(\"no\") }";
+        assert_eq!(run(source).unwrap(), "tamam\n");
+    }
+
+    #[test]
+    fn evaluates_arithmetic_and_strings() {
         assert_eq!(
-            run("print(\"Hello, Earth!\")").unwrap(),
-            vec!["Hello, Earth!"]
+            run("yaz(1 + 2 * 3, (1 + 2) * 3, 7 % 3, 1 / 4, -2)").unwrap(),
+            "7 9 1 0.25 -2\n"
+        );
+        assert_eq!(run("yaz(\"x = \" + 5)").unwrap(), "x = 5\n");
+    }
+
+    #[test]
+    fn supports_else_if_chains() {
+        let source = "\
+fonksiyon not_hesapla(puan) {
+    eğer puan >= 85 { döndür \"AA\" }
+    değilse eğer puan >= 70 { döndür \"BA\" }
+    değilse { döndür \"FF\" }
+}
+yaz(not_hesapla(90), not_hesapla(75), not_hesapla(10))";
+        assert_eq!(run(source).unwrap(), "AA BA FF\n");
+    }
+
+    #[test]
+    fn supports_recursion_and_closures() {
+        let source = "\
+fonksiyon fib(n) {
+    eğer n < 2 { döndür n }
+    döndür fib(n - 1) + fib(n - 2)
+}
+fonksiyon sayaç_yap() {
+    değişken n = 0
+    fonksiyon artır() {
+        n = n + 1
+        döndür n
+    }
+    döndür artır
+}
+değişken say = sayaç_yap()
+say()
+yaz(fib(15), say())";
+        assert_eq!(run(source).unwrap(), "610 2\n");
+    }
+
+    #[test]
+    fn supports_lists_loops_break_and_continue() {
+        let source = "\
+değişken liste = []
+her i içinde aralık(10) {
+    eğer i % 2 == 0 { devam }
+    eğer i > 7 { kır }
+    ekle(liste, i)
+}
+liste[0] = 100
+yaz(liste, uzunluk(liste), liste[-1])";
+        assert_eq!(run(source).unwrap(), "[100, 3, 5, 7] 4 7\n");
+    }
+
+    #[test]
+    fn short_circuits_logical_operators() {
+        assert_eq!(
+            run("yaz(yanlış ve tanımsız(), doğru veya tanımsız(), değil boş)").unwrap(),
+            "yanlış doğru doğru\n"
         );
     }
 
     #[test]
-    fn reports_malformed_input() {
+    fn scopes_block_variables() {
+        let error = run_error("eğer doğru { değişken iç = 1 }\nyaz(iç)");
+        assert_eq!(error.position, Some(Position::new(2, 5)));
+        assert!(error.message.starts_with("Tanımsız değişken 'iç'"));
+    }
+
+    #[test]
+    fn reports_runtime_errors_with_positions() {
+        let error = run_error("yaz(1)\ndeğişken x = 1 / 0");
+        assert_eq!(error.to_string(), "2:16: Sıfıra bölme");
+
+        let error = run_error("yaz([1, 2][5])");
+        assert_eq!(error.message, "İndeks 5 sınırların dışında (uzunluk 2)");
+
+        let error = run_error("yaz(1 + doğru)");
         assert_eq!(
-            run("print(\"missing\""),
-            Err("Expected ')' after quoted string".to_owned())
+            error.message,
+            "'+' işlemi 'sayı' ve 'mantıksal' türleri arasında yapılamaz"
+        );
+    }
+
+    #[test]
+    fn checks_function_arity() {
+        let error = run_error("fonksiyon f(a, b) { }\nf(1)");
+        assert_eq!(error.message, "'f' 2 argüman bekliyor, 1 verildi");
+    }
+
+    #[test]
+    fn stops_runaway_recursion() {
+        // Debug builds use a lot of stack per Earth call; give the test room.
+        let handle = std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(|| run("fonksiyon f() { f() }\nf()").unwrap_err())
+            .unwrap();
+        let error = handle.join().unwrap();
+        assert!(error.message.starts_with("Çok derin özyineleme"));
+    }
+
+    #[test]
+    fn reads_input() {
+        let mut output = Vec::new();
+        let mut input = "Ada\n".as_bytes();
+        run_with_io(
+            "değişken ad = girdi(\"Adın? \")\nyaz(\"Merhaba \" + ad)\nyaz(girdi())",
+            &mut output,
+            &mut input,
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Adın? Merhaba Ada\nboş\n"
+        );
+    }
+
+    #[test]
+    fn converts_between_types() {
+        assert_eq!(
+            run("yaz(sayı(\" 42 \") + 1, sayı(\"abc\"), metin(3) + metin(doğru), tür([]))")
+                .unwrap(),
+            "43 boş 3doğru liste\n"
         );
     }
 }
