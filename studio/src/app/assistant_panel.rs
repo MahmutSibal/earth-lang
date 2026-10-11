@@ -163,7 +163,7 @@ impl StudioApp {
         ui.label(texts.assistant_intro);
         ui.add_space(6.0);
         if let Some(error) = &self.chat_error {
-            ui.label(RichText::new(error_text(texts, error)).color(RED));
+            error_view(ui, texts, error);
             ui.add_space(6.0);
         }
         match self.assistant_sign_in.as_ref().map(SignIn::state) {
@@ -302,7 +302,7 @@ impl StudioApp {
                     });
                 }
                 if let Some(error) = &self.chat_error {
-                    ui.label(RichText::new(error_text(texts, error)).color(RED));
+                    error_view(ui, texts, error);
                 }
             });
 
@@ -570,6 +570,23 @@ fn prose(text: &str, size: f32) -> egui::text::LayoutJob {
     job
 }
 
+/// The error message, with the details GitHub or the system gave, which
+/// can be selected and copied when reporting a problem.
+fn error_view(ui: &mut egui::Ui, texts: &crate::texts::Texts, error: &ChatError) {
+    ui.label(RichText::new(error_text(texts, error)).color(RED));
+    if let ChatError::Network(detail) | ChatError::Failed(detail) = error {
+        ui.add(
+            egui::Label::new(
+                RichText::new(format!("{}: {detail}", texts.assistant_detail))
+                    .small()
+                    .weak(),
+            )
+            .wrap()
+            .selectable(true),
+        );
+    }
+}
+
 fn error_text(texts: &crate::texts::Texts, error: &ChatError) -> &'static str {
     match error {
         ChatError::SignInNeeded => texts.assistant_sign_in_needed,
@@ -577,7 +594,8 @@ fn error_text(texts: &crate::texts::Texts, error: &ChatError) -> &'static str {
         ChatError::RateLimited => texts.assistant_rate_limited,
         ChatError::TooLong => texts.assistant_too_long,
         ChatError::UnknownModel => texts.assistant_unknown_model,
-        ChatError::Network | ChatError::Cancelled => texts.assistant_network,
+        ChatError::Network(_) | ChatError::Cancelled => texts.assistant_network,
+        ChatError::Failed(_) => texts.assistant_failed,
     }
 }
 
