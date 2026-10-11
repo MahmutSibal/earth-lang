@@ -11,6 +11,7 @@ use eframe::egui::{
     RichText, ScrollArea, TextEdit, TextFormat, ViewportCommand,
 };
 
+use crate::assistant::{self, ChatError, Entry, Job};
 use crate::auth::{self, Failure, Profile, Provider, SignIn};
 use crate::files::{self, Node};
 use crate::highlight::{self, DARK};
@@ -27,6 +28,9 @@ const RUN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
 const STOP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::F5);
 const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
 const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
+const ASSISTANT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::I);
+
+mod assistant_panel;
 
 struct Document {
     path: Option<PathBuf>,
@@ -70,7 +74,7 @@ enum LineKind {
 enum AccountAction {
     SignIn(Provider),
     Cancel,
-    Finish(Profile),
+    Finish(Profile, Option<auth::Token>),
     SignOut,
 }
 
@@ -115,6 +119,25 @@ pub struct StudioApp {
     avatar_image: Arc<Mutex<Option<egui::ColorImage>>>,
     avatar: Option<egui::TextureHandle>,
     wake: Arc<dyn Fn() + Send + Sync>,
+    // ----- assistant -----
+    /// The GitHub token for GitHub Models, if connected.
+    github_token: Option<auth::Token>,
+    chat: Vec<Entry>,
+    chat_input: String,
+    chat_job: Option<Job>,
+    chat_error: Option<ChatError>,
+    send_open_file: bool,
+    /// Connecting GitHub from the assistant panel.
+    assistant_sign_in: Option<SignIn>,
+    assistant_browser_opened: bool,
+    /// New text for the open file, waiting for the user to approve it.
+    replace_preview: Option<String>,
+    /// The document and its text before the assistant last changed it.
+    undo: Option<(usize, String)>,
+    /// The last error of a program run, for "Explain error".
+    last_error: Option<String>,
+    /// The cursor as a character index, where "Insert" puts code.
+    cursor_index: Option<usize>,
 }
 
 impl StudioApp {
@@ -155,6 +178,18 @@ impl StudioApp {
             avatar_image: Arc::new(Mutex::new(None)),
             avatar: None,
             wake: Arc::new(move || wake_context.request_repaint()),
+            github_token: crate::credentials::load(),
+            chat: Vec::new(),
+            chat_input: String::new(),
+            chat_job: None,
+            chat_error: None,
+            send_open_file: true,
+            assistant_sign_in: None,
+            assistant_browser_opened: false,
+            replace_preview: None,
+            undo: None,
+            last_error: None,
+            cursor_index: None,
         };
         app.load_avatar();
 
@@ -222,7 +257,10 @@ impl StudioApp {
         context.request_repaint();
     }
 
-    fn finish_sign_in(&mut self, profile: Profile) {
+    fn finish_sign_in(&mut self, profile: Profile, token: Option<auth::Token>) {
+        if let Some(token) = token {
+            crate::credentials::save(&token);
+        }
         self.settings.profile = Some(profile);
         self.settings.save();
         self.sign_in = None;
@@ -230,6 +268,7 @@ impl StudioApp {
     }
 
     fn sign_out(&mut self) {
+        self.disconnect_github();
         self.settings.profile = None;
         self.settings.save();
         self.avatar = None;
@@ -403,6 +442,7 @@ impl StudioApp {
             return;
         }
         self.save_all_named();
+        self.last_error = None;
         for document in &mut self.documents {
             document.error_line = None;
         }
@@ -501,6 +541,9 @@ impl StudioApp {
         };
         let prefix = self.texts().error_in;
         self.write_terminal(format!("✖ {prefix}: {place}{text}\n"), LineKind::Error);
+        if self.running_program {
+            self.last_error = Some(format!("{place}{text}"));
+        }
         if let (Some(index), Some(line)) = (document, line) {
             self.documents[index].error_line = Some(line);
             if self.running_program {
@@ -579,6 +622,12 @@ impl StudioApp {
                 if ui.button(format!("🌐 {}", other.1)).clicked() {
                     self.settings.lang = other.0;
                     self.settings.save();
+                }
+                let assistant = ui
+                    .selectable_label(self.settings.assistant_open, texts.assistant)
+                    .on_hover_text(texts.assistant_hint);
+                if assistant.clicked() {
+                    self.toggle_assistant();
                 }
             });
         });
@@ -719,6 +768,7 @@ impl StudioApp {
         }
         if let Some(index) = cursor {
             self.cursor = line_and_column(&document.text, index);
+            self.cursor_index = Some(index);
         }
     }
 
@@ -731,6 +781,11 @@ impl StudioApp {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.small_button(texts.clear).clicked() {
                     self.terminal.clear();
+                }
+                if let Some(error) = self.last_error.clone() {
+                    if ui.small_button(texts.assistant_explain_error).clicked() {
+                        self.explain_error(&error);
+                    }
                 }
             });
         });
@@ -1092,8 +1147,8 @@ impl StudioApp {
                             }
                         });
                     }
-                    Some(auth::State::Done(profile)) => {
-                        action = Some(AccountAction::Finish(profile));
+                    Some(auth::State::Done(profile, token)) => {
+                        action = Some(AccountAction::Finish(profile, token));
                     }
                     Some(auth::State::Failed(failure)) => {
                         let message = match failure {
@@ -1113,7 +1168,7 @@ impl StudioApp {
         match action {
             Some(AccountAction::SignIn(provider)) => self.start_sign_in(context, provider),
             Some(AccountAction::Cancel) => self.sign_in = None,
-            Some(AccountAction::Finish(profile)) => self.finish_sign_in(profile),
+            Some(AccountAction::Finish(profile, token)) => self.finish_sign_in(profile, token),
             Some(AccountAction::SignOut) => self.sign_out(),
             None => {}
         }
@@ -1130,6 +1185,7 @@ impl StudioApp {
         let texts = self.texts();
         let before = self.settings.clone();
         let mut open = true;
+        let mut disconnect = false;
         egui::Window::new(texts.settings_title)
             .open(&mut open)
             .collapsible(false)
@@ -1158,6 +1214,28 @@ impl StudioApp {
                         ui.end_row();
                     });
                 ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(texts.assistant_model);
+                    let current = assistant::MODELS
+                        .iter()
+                        .find(|(id, _)| *id == self.settings.assistant_model)
+                        .map_or(self.settings.assistant_model.as_str(), |(_, name)| name);
+                    egui::ComboBox::from_id_salt("assistant_model")
+                        .selected_text(current)
+                        .show_ui(ui, |ui| {
+                            for (id, name) in assistant::MODELS {
+                                ui.selectable_value(
+                                    &mut self.settings.assistant_model,
+                                    (*id).to_owned(),
+                                    *name,
+                                );
+                            }
+                        });
+                });
+                if self.github_token.is_some() && ui.button(texts.assistant_disconnect).clicked() {
+                    disconnect = true;
+                }
+                ui.add_space(4.0);
                 ui.checkbox(&mut self.settings.auto_update, texts.settings_auto_update);
                 if self.settings.auto_update != before.auto_update {
                     ui.label(RichText::new(texts.settings_restart_note).small().weak());
@@ -1169,6 +1247,9 @@ impl StudioApp {
             });
         if self.settings != before {
             self.settings.save();
+        }
+        if disconnect {
+            self.disconnect_github();
         }
         if !open {
             self.show_settings = false;
@@ -1258,6 +1339,9 @@ impl StudioApp {
         if context.input_mut(|i| i.consume_shortcut(&NEW)) {
             self.new_document();
         }
+        if context.input_mut(|i| i.consume_shortcut(&ASSISTANT)) {
+            self.toggle_assistant();
+        }
     }
 }
 
@@ -1315,6 +1399,13 @@ impl eframe::App for StudioApp {
                     .frame(egui::Frame::NONE)
                     .show(ui, |ui| self.explorer(ui));
             });
+        if self.settings.assistant_open {
+            egui::Panel::right("assistant")
+                .resizable(true)
+                .default_size(380.0)
+                .min_size(280.0)
+                .show(ui, |ui| self.assistant_panel(ui));
+        }
         // After the explorer, so that the explorer runs the full height and
         // the account corner sits at the bottom left, as in VS Code.
         egui::Panel::bottom("terminal")
@@ -1328,6 +1419,8 @@ impl eframe::App for StudioApp {
             self.editor(ui);
         });
 
+        self.poll_assistant();
+        self.replace_window(&context);
         self.account_window(&context);
         self.settings_window(&context);
         self.dialogs(&context);
