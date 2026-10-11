@@ -130,7 +130,7 @@ fib(20) = 6765
 | **Araç çubuğu** (üst) | 📂 Klasör Aç, 📚 Örnekler, 📄 Yeni, 💾 Kaydet, ▶ Çalıştır, ⏹ Durdur ve arayüz dili (Türkçe/English). |
 | **Gezgin** (sol) | Açık klasördeki dosyalar. Bir dosyaya tıklamak onu yeni bir sekmede açar. **+ Dosya** klasörde yeni bir `.earth` dosyası oluşturur, **⟳** listeyi yeniler. |
 | **Editör** (orta) | Sekmeli kod editörü: satır numaraları ve renklendirme. Kaydedilmemiş dosyanın sekmesinde `•` görünür. Hata veren satır kırmızıyla işaretlenir. |
-| **Earth Asistan** (sağ, ✨ Asistan ya da Ctrl+I) | Yapay zekâ ile sohbet: kod yazdır, kodunu açıklat, hatanı düzelttir. Ayrıntılar: [Earth Asistan](#earth-asistan). |
+| **Earth Asistan** (sağ, ✨ Asistan ya da Ctrl+I) | Yapay zekâ ile sohbet: kod yazdır, kodunu açıklat, hatanı düzelttir. Gemini ya da OpenRouter ile ücretsiz. Ayrıntılar: [Earth Asistan](#earth-asistan). |
 | **Hesap ve ayarlar** (sol alt köşe) | **👤 Giriş yap** ile Google ya da GitHub hesabınla giriş, **⚙** ile ayarlar. Ayrıntılar: [Hesap ve ayarlar](#hesap-ve-ayarlar). |
 | **Terminal** (editörün altı) | Programın çıktısı burada akar. Program `girdi` ile bir şey sorduğunda cevabı alttaki satıra yazarsın. Program çalışmıyorken aynı satır bir Earth komut satırıdır (REPL). Kenarından sürükleyerek büyütülebilir. |
 | **Durum çubuğu** (en alt) | Solda toplam indirme sayısı ve programın durumu (Hazır, Çalışıyor…, Girdi bekleniyor); sağda imlecin satır ve sütunu, dosyanın algılanan dili ve Studio'nun sürümü. |
@@ -197,7 +197,7 @@ olup olmadığına bakar. Yeni sürüm varsa:
 3. Şeride dokunmazsan güncelleme Studio kapatılırken sessizce kurulur; bir
    sonraki açılışta yeni sürüm çalışır.
 
-Durum çubuğundaki sürüm numarasına (`v0.9.2` gibi) tıklamak hemen denetler.
+Durum çubuğundaki sürüm numarasına (`v0.10.0` gibi) tıklamak hemen denetler.
 Sol alt köşedeki **⬇ … kişi indirdi** sayacı, kurulum dosyasının GitHub'dan
 toplam indirilme sayısıdır. Studio senin hakkında hiçbir bilgi göndermez;
 yalnızca herkese açık sürüm bilgisini okur.
@@ -220,7 +220,8 @@ Sol alt köşede iki düğme var:
 - **⚙ Ayarlar**:
   - **Arayüz dili**: Türkçe ya da English.
   - **Editör yazı boyutu**: 11–24.
-  - **Asistan modeli**: GPT-4.1, GPT-4.1 mini, GPT-4o ya da GPT-4o mini.
+  - **Asistan**: kullanılan servis ve model; **Değiştir** ile değiştirilir,
+    **API anahtarını sil** ile anahtar silinir.
   - **Güncellemeleri otomatik indir ve kur**: Studio yeniden açılınca
     geçerli olur.
 
@@ -235,12 +236,21 @@ Sağdaki **Earth Asistan** paneli (araç çubuğunda **✨ Asistan** ya da
 **Ctrl+I**) yapay zekâ ile sohbet etmeni sağlar: "bana bir sayı tahmin oyunu
 yaz", "bu dosya ne yapıyor?", "bu döngüyü açıkla" gibi.
 
-- **Bağlanmak:** Panelde **GitHub ile bağlan**a bas, gösterilen kodu
-  `github.com/login/device` sayfasına gir. Asistan
-  [GitHub Models](https://github.com/marketplace/models) kullanır; ücretsizdir
-  ama günlük ve dakikalık kullanım sınırları vardır. Sınıra ulaşırsan biraz
-  bekle ya da ayarlardan başka bir model seç (mini modellerin sınırı daha
-  geniştir).
+**Kurulum.** Panel ilk açılışta bir yapay zekâ servisi seçmeni ister:
+
+| Servis | Ücret | Ne gerekir |
+|---|---|---|
+| **Google Gemini** | Ücretsiz (Flash modelleri, günlük sınırla) | [Google AI Studio](https://aistudio.google.com/apikey)'dan bir API anahtarı; kredi kartı gerekmez |
+| **OpenRouter** | Ücretsiz modeller (`:free`), günlük sınırla | [OpenRouter](https://openrouter.ai/keys) anahtarı |
+| **OpenAI** | Ücretli | [OpenAI](https://platform.openai.com/api-keys) anahtarı |
+| **Bu bilgisayar** | Ücretsiz, internetsiz | [Ollama](https://ollama.com) ya da [LM Studio](https://lmstudio.ai) açık ve bir model indirilmiş olmalı |
+| **Özel adres** | — | OpenAI uyumlu herhangi bir adres |
+
+Anahtarı yapıştırıp **Bağlan ve modelleri getir**e bas; Studio servisin
+sunduğu modelleri listeler ve uygun olanı (Gemini'de Flash, OpenRouter'da
+ücretsiz bir model) seçer. **Kaydet** ile bitir. Servisi ya da modeli sonra
+panelin üstündeki **⚙ Servis** ile değiştirebilirsin.
+
 - **Earth'ü bilir:** Hiçbir yapay zekâ modeli Earth'ü önceden bilmez. Bu
   yüzden asistan her soruda Earth'ün anahtar kelimelerini, yerleşik
   fonksiyonlarını ve kurallarını modele verir.
@@ -259,11 +269,13 @@ yaz", "bu dosya ne yapıyor?", "bu döngüyü açıkla" gibi.
 - **Açık dosyayı gönder** işaretliyse açık dosyan soruyla birlikte gönderilir;
   asistan böylece kodun hakkında konuşabilir. İşareti kaldırırsan dosya
   gönderilmez.
+- Bir hata olursa panel nedenini ve servisin verdiği ayrıntıyı gösterir.
 
 Asistanı kullandığında sorun, sohbet geçmişi ve (işaretliyse) açık dosyan
-cevap üretilmesi için GitHub Models'e gönderilir. GitHub erişim anahtarı
-Windows'ta **Kimlik Bilgileri Yöneticisi**'nde şifreli saklanır; **⚙ →
-GitHub bağlantısını kaldır** ya da **Çıkış yap** onu siler.
+seçtiğin servise gönderilir ("Bu bilgisayar" seçeneğinde bilgisayarından
+çıkmaz). API anahtarı yalnızca bu bilgisayarda, Windows'ta **Kimlik Bilgileri
+Yöneticisi**'nde şifreli saklanır; **⚙ Ayarlar → API anahtarını sil** onu
+siler.
 
 ## Komut satırı: `earth`
 
@@ -280,7 +292,7 @@ gelir) her yeni Komut İstemi ya da PowerShell penceresinde kullanılabilir:
 
 ```text
 C:\Users\sen> earth
-Earth 0.9.2 — çıkmak için 'çık' yazın
+Earth 0.10.0 — çıkmak için 'çık' yazın
 earth> değişken fiyat = 120
 earth> fiyat * 1.2
 144
@@ -1043,7 +1055,7 @@ sorun olursa ekran kartı sürücülerini güncelle ya da
 herkese açık sürüm bilgisini ve indirme sayısını okur. Giriş yaparsan
 profil bilgilerin sadece bu bilgisayarda saklanır. Tek istisna Earth
 Asistan'dır: onu kullandığında sorun ve (istersen) açık dosyan cevap için
-GitHub Models'e gönderilir.
+seçtiğin yapay zekâ servisine gönderilir.
 
 **Bir hata buldum ya da önerim var.**
 [Issues](https://github.com/MahmutSibal/earth-lang/issues) sayfasından
@@ -1168,7 +1180,8 @@ renklendirme eklentisidir; kurulumu
 - [x] Earth Studio: gezgin, sekmeli editör, terminal, REPL
 - [x] Windows kurulum programı, otomatik güncelleme
 - [x] Komut satırı: `earth` kabuğu ve `earth dosya.earth`
-- [x] Earth Asistan: GitHub Models ile sohbet, ayrıştırıcıyla denetlenen kod
+- [x] Earth Asistan: Gemini, OpenRouter, OpenAI ya da yerel modelle sohbet,
+  ayrıştırıcıyla denetlenen kod
 - [x] VS Code sözdizimi renklendirme
 - [ ] Dosya okuma ve yazma
 - [ ] Sınıflar / kullanıcı tanımlı türler

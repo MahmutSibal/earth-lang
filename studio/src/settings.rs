@@ -21,8 +21,11 @@ pub struct Settings {
     pub font_size: f32,
     pub auto_update: bool,
     pub profile: Option<Profile>,
-    /// The GitHub Models model the assistant uses.
-    pub assistant_model: String,
+    /// The assistant's AI service (`assistant::Service` id), its address
+    /// for a custom service, and the model; empty until set up.
+    pub ai_service: String,
+    pub ai_base_url: String,
+    pub ai_model: String,
     pub assistant_open: bool,
 }
 
@@ -33,7 +36,9 @@ impl Default for Settings {
             font_size: 15.0,
             auto_update: true,
             profile: None,
-            assistant_model: crate::assistant::DEFAULT_MODEL.to_owned(),
+            ai_service: String::new(),
+            ai_base_url: String::new(),
+            ai_model: String::new(),
             assistant_open: false,
         }
     }
@@ -82,15 +87,9 @@ impl Settings {
             auto_update: value["auto_update"]
                 .as_bool()
                 .unwrap_or(defaults.auto_update),
-            assistant_model: value["assistant_model"]
-                .as_str()
-                .filter(|model| {
-                    crate::assistant::MODELS
-                        .iter()
-                        .any(|(known, _)| known == model)
-                })
-                .map(str::to_owned)
-                .unwrap_or(defaults.assistant_model),
+            ai_service: text(&value["ai_service"]),
+            ai_base_url: text(&value["ai_base_url"]),
+            ai_model: text(&value["ai_model"]),
             assistant_open: value["assistant_open"]
                 .as_bool()
                 .unwrap_or(defaults.assistant_open),
@@ -111,7 +110,9 @@ impl Settings {
             },
             "font_size": self.font_size,
             "auto_update": self.auto_update,
-            "assistant_model": self.assistant_model,
+            "ai_service": self.ai_service,
+            "ai_base_url": self.ai_base_url,
+            "ai_model": self.ai_model,
             "assistant_open": self.assistant_open,
             "profile": self.profile.as_ref().map(|profile| json!({
                 "provider": match profile.provider {
@@ -159,7 +160,9 @@ mod tests {
             lang: Lang::En,
             font_size: 18.0,
             auto_update: false,
-            assistant_model: "openai/gpt-4o-mini".to_owned(),
+            ai_service: "gemini".to_owned(),
+            ai_base_url: String::new(),
+            ai_model: "gemini-flash".to_owned(),
             assistant_open: true,
             profile: Some(Profile {
                 provider: Provider::GitHub,

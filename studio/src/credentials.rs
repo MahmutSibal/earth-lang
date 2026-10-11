@@ -1,21 +1,28 @@
-//! Keeps the GitHub token that the assistant uses. On Windows it lives in
-//! the Credential Manager (encrypted for the signed-in Windows user); on
-//! other systems in a file only the user can read, next to the settings.
+//! Keeps the assistant's API keys, one per AI service. On Windows they
+//! live in the Credential Manager (encrypted for the signed-in Windows
+//! user); on other systems in files only the user can read, next to the
+//! settings.
 
-use crate::auth::Token;
-
-const TARGET: &str = "Earth Studio/GitHub";
-
-pub fn load() -> Option<Token> {
-    Token::from_json(&platform::read(TARGET)?)
+fn target(service: &str) -> String {
+    format!("Earth Studio/AI/{service}")
 }
 
-pub fn save(token: &Token) {
-    platform::write(TARGET, &token.to_json());
+pub fn load_api_key(service: &str) -> Option<String> {
+    platform::read(&target(service)).filter(|key| !key.is_empty())
 }
 
-pub fn delete() {
-    platform::delete(TARGET);
+pub fn save_api_key(service: &str, key: &str) {
+    platform::write(&target(service), key);
+}
+
+pub fn delete_api_key(service: &str) {
+    platform::delete(&target(service));
+}
+
+/// Versions 0.9.x kept a GitHub token for GitHub Models, which GitHub has
+/// retired; it is no longer needed.
+pub fn forget_github_token() {
+    platform::delete("Earth Studio/GitHub");
 }
 
 #[cfg(windows)]
@@ -121,12 +128,23 @@ mod platform {
     use std::io::Write;
     use std::path::PathBuf;
 
-    fn file() -> Option<PathBuf> {
-        Some(crate::settings::folder()?.join("github-token.json"))
+    /// One file per target, named after it.
+    fn file(target: &str) -> Option<PathBuf> {
+        let name: String = target
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        Some(crate::settings::folder()?.join("secrets").join(name))
     }
 
-    pub fn write(_target: &str, secret: &str) {
-        let Some(path) = file() else {
+    pub fn write(target: &str, secret: &str) {
+        let Some(path) = file(target) else {
             return;
         };
         if let Some(folder) = path.parent() {
@@ -144,12 +162,12 @@ mod platform {
         }
     }
 
-    pub fn read(_target: &str) -> Option<String> {
-        fs::read_to_string(file()?).ok()
+    pub fn read(target: &str) -> Option<String> {
+        fs::read_to_string(file(target)?).ok()
     }
 
-    pub fn delete(_target: &str) {
-        if let Some(path) = file() {
+    pub fn delete(target: &str) {
+        if let Some(path) = file(target) {
             let _ = fs::remove_file(path);
         }
     }
@@ -157,26 +175,20 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
-    /// Uses its own target, so it leaves the real token alone. On Linux the
-    /// target is ignored, so the test only runs where it cannot clash.
+    use super::platform;
+
+    /// Uses its own target, so the real keys are left alone.
     #[test]
-    #[cfg(windows)]
     fn stores_reads_and_deletes_a_secret() {
-        use super::platform;
         let target = "Earth Studio/test";
-        platform::write(target, "ghu_secret");
-        assert_eq!(platform::read(target).as_deref(), Some("ghu_secret"));
+        #[cfg(not(windows))]
+        std::env::set_var(
+            "XDG_CONFIG_HOME",
+            std::env::temp_dir().join(format!("earth-credentials-{}", std::process::id())),
+        );
+        platform::write(target, "sk-secret");
+        assert_eq!(platform::read(target).as_deref(), Some("sk-secret"));
         platform::delete(target);
         assert_eq!(platform::read(target), None);
-    }
-
-    #[test]
-    fn token_survives_json() {
-        let token = crate::auth::Token {
-            access: "ghu_a".to_owned(),
-            refresh: Some("ghr_b".to_owned()),
-            expires_at: Some(1_800_000_000),
-        };
-        assert_eq!(crate::auth::Token::from_json(&token.to_json()), Some(token));
     }
 }
