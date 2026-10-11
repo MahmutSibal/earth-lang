@@ -249,7 +249,9 @@ fn messages(system: &str, history: &[Entry]) -> Vec<Value> {
     messages
 }
 
-/// Sends one request and streams the answer into the shared text.
+/// Gets one answer: streamed as it is written, or, if what comes back is
+/// not a readable stream (some proxies and security programs break
+/// streams), asked again without streaming.
 fn complete(
     request: &Request,
     token: &mut Token,
@@ -260,14 +262,44 @@ fn complete(
     if token.is_expired() {
         *token = auth::refresh_github(token).map_err(|_| ChatError::SignInNeeded)?;
     }
+    match exchange(request, token, messages, true, cancelled, update)? {
+        Outcome::Answer(answer) => Ok(answer),
+        Outcome::NotAnAnswer(first) => {
+            update(&|state| state.text.clear());
+            match exchange(request, token, messages, false, cancelled, update)? {
+                Outcome::Answer(answer) => Ok(answer),
+                Outcome::NotAnAnswer(second) => Err(ChatError::Failed(format!(
+                    "{first} | stream: off → {second}"
+                ))),
+            }
+        }
+    }
+}
+
+enum Outcome {
+    Answer(String),
+    /// A successful status, but no answer in it: what came instead.
+    NotAnAnswer(String),
+}
+
+fn exchange(
+    request: &Request,
+    token: &mut Token,
+    messages: &[Value],
+    stream: bool,
+    cancelled: &AtomicBool,
+    update: &Update,
+) -> Result<Outcome, ChatError> {
     let body = json!({
         "model": request.model,
         "messages": messages,
-        "stream": true,
+        "stream": stream,
     });
     let mut refreshed = false;
     let response = loop {
-        let response = crate::update::agent(5)
+        // Redirects are not followed: a POST that is redirected loses its
+        // body, and where it was sent is worth reporting.
+        let response = crate::update::agent(0)
             .post(&request.endpoint)
             .header("Authorization", &format!("Bearer {}", token.access))
             .header("Accept", "application/vnd.github+json")
@@ -285,11 +317,21 @@ fn complete(
         if response.status().is_success() {
             break response;
         }
+        if response.status().is_redirection() {
+            let location = header(&response, "location");
+            return Err(ChatError::Failed(format!("HTTP {status} → {location}")));
+        }
         let mut response = response;
         let detail = response.body_mut().read_to_string().unwrap_or_default();
         return Err(classify(status, &detail));
     };
 
+    let status = response.status().as_u16();
+    let content_type = header(&response, "content-type");
+    let host = {
+        use ureq::ResponseExt;
+        response.get_uri().host().unwrap_or("?").to_owned()
+    };
     let mut answer = String::new();
     // Anything that is not an event, in case the answer is not a stream.
     let mut other = String::new();
@@ -319,22 +361,33 @@ fn complete(
             update(&|state| state.text.push_str(delta));
         }
     }
-    if answer.trim().is_empty() {
-        // A whole JSON answer instead of a stream.
-        if let Ok(whole) = serde_json::from_str::<Value>(&other) {
-            if let Some(content) = whole["choices"][0]["message"]["content"].as_str() {
-                update(&|state| state.text.push_str(content));
-                return Ok(content.to_owned());
-            }
-        }
-        let body = if other.trim().is_empty() {
-            "empty answer"
-        } else {
-            &other
-        };
-        return Err(classify(0, body));
+    if !answer.trim().is_empty() {
+        return Ok(Outcome::Answer(answer));
     }
-    Ok(answer)
+    // A whole JSON answer instead of a stream.
+    if let Ok(whole) = serde_json::from_str::<Value>(&other) {
+        if let Some(content) = whole["choices"][0]["message"]["content"].as_str() {
+            update(&|state| state.text.push_str(content));
+            return Ok(Outcome::Answer(content.to_owned()));
+        }
+        if whole.get("error").is_some() {
+            return Err(classify(0, &other));
+        }
+    }
+    let snippet: String = other.trim().chars().take(200).collect();
+    Ok(Outcome::NotAnAnswer(format!(
+        "HTTP {status} ({content_type}, {host}): {}",
+        if snippet.is_empty() { "-" } else { &snippet }
+    )))
+}
+
+fn header(response: &ureq::http::Response<ureq::Body>, name: &str) -> String {
+    response
+        .headers()
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("-")
+        .to_owned()
 }
 
 fn classify(status: u16, body: &str) -> ChatError {
@@ -658,7 +711,16 @@ mod tests {
                     }
                 }
                 requests.push(String::from_utf8_lossy(&request).into_owned());
-                let reply = if let Some(json) = answer.strip_prefix("JSON ") {
+                let reply = if let Some(text) = answer.strip_prefix("TEXT ") {
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+                        text.len()
+                    )
+                } else if let Some(location) = answer.strip_prefix("REDIRECT ") {
+                    format!(
+                        "HTTP/1.1 301 Moved\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                } else if let Some(json) = answer.strip_prefix("JSON ") {
                     format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{json}",
                         json.len()
@@ -763,6 +825,52 @@ mod tests {
         let mut token = request.token.clone();
         let entry = converse(&request, &mut token, &AtomicBool::new(false), &|_| {}).unwrap();
         assert_eq!(entry.text, "Merhaba!");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn asks_again_without_streaming_when_the_stream_is_unreadable() {
+        let answer = json!({ "choices": [{ "message": { "content": "Merhaba!" } }] });
+        let (endpoint, server) = fake_models(vec!["TEXT OK".to_owned(), format!("JSON {answer}")]);
+        let request = request(endpoint);
+        let mut token = request.token.clone();
+        let entry = converse(&request, &mut token, &AtomicBool::new(false), &|_| {}).unwrap();
+        assert_eq!(entry.text, "Merhaba!");
+        let requests = server.join().unwrap();
+        assert!(requests[0].contains("\"stream\":true"));
+        assert!(requests[1].contains("\"stream\":false"));
+    }
+
+    #[test]
+    fn reports_what_came_back_instead_of_an_answer() {
+        let (endpoint, server) = fake_models(vec!["TEXT OK".to_owned(), "TEXT OK".to_owned()]);
+        let request = request(endpoint);
+        let mut token = request.token.clone();
+        let result = converse(&request, &mut token, &AtomicBool::new(false), &|_| {});
+        let Err(ChatError::Failed(detail)) = result else {
+            panic!("{result:?}");
+        };
+        assert!(
+            detail.contains("HTTP 200 (text/plain, 127.0.0.1): OK"),
+            "{detail}"
+        );
+        assert!(detail.contains("stream: off"), "{detail}");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn reports_a_redirect_instead_of_following_it() {
+        let (endpoint, server) =
+            fake_models(vec!["REDIRECT https://example.com/elsewhere".to_owned()]);
+        let request = request(endpoint);
+        let mut token = request.token.clone();
+        let result = converse(&request, &mut token, &AtomicBool::new(false), &|_| {});
+        assert_eq!(
+            result,
+            Err(ChatError::Failed(
+                "HTTP 301 → https://example.com/elsewhere".to_owned()
+            ))
+        );
         server.join().unwrap();
     }
 
