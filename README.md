@@ -52,6 +52,7 @@ fib(20) = 6765
 - [Neden Earth?](#neden-earth)
 - [Hızlı başlangıç](#hızlı-başlangıç)
 - [Earth Studio](#earth-studio)
+- [Komut satırı: `earth`](#komut-satırı-earth)
 - [Dil öğreticisi](#dil-öğreticisi)
   - [İlk program](#1-ilk-program) ·
     [Değişkenler](#2-değişkenler) ·
@@ -192,10 +193,51 @@ olup olmadığına bakar. Yeni sürüm varsa:
 3. Şeride dokunmazsan güncelleme Studio kapatılırken sessizce kurulur; bir
    sonraki açılışta yeni sürüm çalışır.
 
-Durum çubuğundaki sürüm numarasına (`v0.6.0` gibi) tıklamak hemen denetler.
+Durum çubuğundaki sürüm numarasına (`v0.7.0` gibi) tıklamak hemen denetler.
 Sol alt köşedeki **⬇ … kişi indirdi** sayacı, kurulum dosyasının GitHub'dan
 toplam indirilme sayısıdır. Studio senin hakkında hiçbir bilgi göndermez;
 yalnızca herkese açık sürüm bilgisini okur.
+
+## Komut satırı: `earth`
+
+Kurulum, Earth Studio'nun yanında komut satırı yorumlayıcısı **`earth`**'ü de
+kurar. Sihirbazdaki **earth komutunu PATH'e ekle** seçeneği işaretliyse (işaretli
+gelir) her yeni Komut İstemi ya da PowerShell penceresinde kullanılabilir:
+
+| Komut | Ne yapar |
+|---|---|
+| `earth` | Etkileşimli kabuğu açar (Python'daki gibi). Satır satır komut yaz, sonucu hemen gör; çıkmak için `çık`. |
+| `earth dosya.earth` | Dosyayı çalıştırır. Hata varsa satırı ve yerini gösterir, çıkış kodu `1` olur. |
+| `earth --dil en dosya.earth` | Çıktı ve hata dilini seçer (`tr` / `en`). Seçilmezse programın dilinden anlaşılır. |
+| `earth --sürüm`, `earth --yardım` | Sürümü ya da yardımı gösterir. |
+
+```text
+C:\Users\sen> earth
+Earth 0.7.0 — çıkmak için 'çık' yazın
+earth> değişken fiyat = 120
+earth> fiyat * 1.2
+144
+earth> fonksiyon kare(x) {
+...        döndür x * x
+...    }
+earth> kare(7)
+49
+earth> çık
+```
+
+Hatalı bir dosya çalıştırıldığında hata, programın yazıldığı dilde, satır ve
+sütun bilgisiyle gösterilir:
+
+```text
+C:\Users\sen\Documents\Earth> earth hesap.earth
+Earth hatası: hesap.earth:2:8: İfade bekleniyordu, ')' bulundu
+  |
+2 | yaz(1 +)
+  |        ^
+```
+
+`.earth` dosyasına sağ tıklayıp **Terminalde çalıştır** da aynı şeyi yapar; pencere
+program bitince Enter'a basana kadar açık kalır.
 
 ## Dil öğreticisi
 
@@ -855,21 +897,32 @@ sayfasındaki **`EarthStudio-Kurulum.exe`** şu adımlarla kurar:
 1. Hoş geldin ekranı (kurulum, Windows'un diline göre Türkçe ya da İngilizce açılır)
 2. Kurulum klasörü — varsayılan `%LOCALAPPDATA%\Programs\Earth Studio`;
    **yönetici izni gerekmez**
-3. Masaüstü kısayolu seçeneği (işaretli gelir)
+3. Seçenekler (hepsi işaretli gelir):
+   - **Masaüstü simgesi oluşturulsun**
+   - **.earth dosyalarını Earth Studio ile aç**: çift tıklanan `.earth`
+     dosyası Studio'da açılır; sağ tık menüsüne **Terminalde çalıştır** eklenir.
+   - **earth komutunu PATH'e ekle**: komut isteminde `earth` ve
+     `earth dosya.earth` çalışır.
 4. İlerleme çubuğuyla kurulum
 5. "Earth Studio'yu çalıştır" ile bitiş
+
+**Güncelleme:** Earth Studio zaten kuruluysa kurulum bunu fark eder. Hoş geldin
+ekranında kurulu sürümü ve yeni sürümü gösterir, klasör sorusunu atlar ve
+mevcut kurulumu yerinde günceller. Önceki seçeneklerin ve programların
+korunur; açık olan Studio kapatılır. Bir seçeneğin işaretini kaldırıp
+güncellersen o seçeneğin yaptığı da geri alınır.
 
 Kurulumdan sonra:
 
 - Başlat menüsünde ve masaüstünde **Earth Studio** kısayolu bulunur.
-- `.earth` dosyaları çift tıklanınca Studio'da açılır.
-- Kurulum klasöründe yalnızca `earth-studio.exe` ve kaldırıcı vardır; dil,
-  yorumlayıcı ve örnekler programın içine gömülüdür.
-- Kaldırmak için **Ayarlar → Uygulamalar → Earth Studio**. Kaldırma,
-  `Belgeler\Earth` klasöründeki programlarına dokunmaz.
+- Kurulum klasöründe yalnızca `earth-studio.exe`, komut satırı için
+  `earth.exe` ve kaldırıcı vardır; dil ve örnekler programların içine gömülüdür.
+- Kaldırmak için **Ayarlar → Uygulamalar → Earth Studio**. Kaldırma, PATH
+  kaydını ve dosya ilişkilendirmesini de siler; `Belgeler\Earth` klasöründeki
+  programlarına dokunmaz.
 
 **Tek satırla kurulum:** PowerShell'e yapıştır. Aynı kurulum dosyasını indirir,
-SHA-256 özetini doğrular, masaüstü kısayoluyla sessizce kurar. Bu yolla
+SHA-256 özetini doğrular, bütün seçeneklerle sessizce kurar. Bu yolla
 indirilen dosyalar Windows SmartScreen uyarısı göstermez.
 
 ```powershell
@@ -887,7 +940,9 @@ Get-FileHash EarthStudio-Kurulum.exe
 
 Releases sayfasındaki `earth-studio-linux-x64.tar.gz` ya da
 `earth-studio-macos-arm64.tar.gz` arşivini aç ve `earth-studio` programını
-çalıştır. Bu sistemlerde Studio yeni sürümleri haber verir ve indirme sayfasına
+çalıştır. Arşivdeki `earth` komut satırı yorumlayıcısını PATH'teki bir klasöre
+(örneğin `~/.local/bin`) kopyalarsan terminalde `earth` ve `earth dosya.earth`
+kullanılabilir. Bu sistemlerde Studio yeni sürümleri haber verir ve indirme sayfasına
 yönlendirir.
 
 ## Sık sorulan sorular
@@ -933,6 +988,8 @@ bildirebilirsin.
 ```bash
 cargo run -p earth-studio                                # Earth Studio'yu aç
 cargo run -p earth-studio -- examples/fizzbuzz.earth     # bir dosyayla aç
+cargo run -p earth                                       # komut satırı kabuğu
+cargo run -p earth -- examples/fizzbuzz.earth            # dosyayı terminalde çalıştır
 ```
 
 Windows'ta `link.exe not found` hatası alırsan **Visual Studio Build Tools**
@@ -962,7 +1019,8 @@ earth-lang/
 │   ├── parser.rs, ast.rs özyinelemeli iniş ayrıştırıcısı ve sözdizimi ağacı
 │   ├── interpreter.rs    ağaç gezen yorumlayıcı, kapsamlar, modüller
 │   ├── value.rs          değerler, listeler, sözlükler
-│   └── stdlib.rs         girdi/çıktı dışındaki yerleşik fonksiyonlar
+│   ├── stdlib.rs         girdi/çıktı dışındaki yerleşik fonksiyonlar
+│   └── main.rs           komut satırı: earth ve earth dosya.earth
 ├── studio/               Earth Studio (egui)
 │   └── src/              arayüz, renklendirme, çalıştırıcı, güncelleyici
 ├── examples/             örnek programlar (Studio'ya gömülür)
@@ -986,9 +1044,9 @@ GitHub Actions kullanılamıyorsa Windows kurulum dosyası Linux'ta da üretileb
 
 ```bash
 rustup target add x86_64-pc-windows-gnu
-cargo build --release -p earth-studio --target x86_64-pc-windows-gnu
+cargo build --release --workspace --target x86_64-pc-windows-gnu
 cd windows && wine 'C:\InnoSetup\ISCC.exe' /DAppVersion=0.7.0 \
-  '/DStudioExe=..\target\x86_64-pc-windows-gnu\release\earth-studio.exe' installer.iss
+  '/DBinDir=..\target\x86_64-pc-windows-gnu\release' installer.iss
 cd Output && sha256sum EarthStudio-Kurulum.exe > SHA256SUMS.txt
 ```
 
@@ -1038,6 +1096,7 @@ renklendirme eklentisidir; kurulumu
 - [x] Modüller (`içe_aktar`)
 - [x] Earth Studio: gezgin, sekmeli editör, terminal, REPL
 - [x] Windows kurulum programı, otomatik güncelleme
+- [x] Komut satırı: `earth` kabuğu ve `earth dosya.earth`
 - [x] VS Code sözdizimi renklendirme
 - [ ] Dosya okuma ve yazma
 - [ ] Sınıflar / kullanıcı tanımlı türler

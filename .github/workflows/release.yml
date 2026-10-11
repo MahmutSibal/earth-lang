@@ -4,6 +4,7 @@ name: Release
 # SHA-256 checksums, a GitHub release containing:
 #   - EarthStudio-Kurulum.exe   the Windows installer
 #   - earth-studio-linux-x64.tar.gz, earth-studio-macos-arm64.tar.gz
+#     (Earth Studio plus the earth command-line interpreter)
 on:
   push:
     tags: ["v*"]
@@ -21,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
-      - run: cargo build --release -p earth-studio
+      - run: cargo build --release --workspace
 
       - name: Sign earth-studio.exe
         if: env.CAN_SIGN == 'true'
@@ -47,7 +48,7 @@ jobs:
             $env:Path += ";${env:ProgramFiles(x86)}\Inno Setup 6"
           }
           $version = "${{ github.ref_name }}".TrimStart("v")
-          iscc /DAppVersion=$version /DStudioExe=..\target\release\earth-studio.exe windows\installer.iss
+          iscc /DAppVersion=$version /DBinDir=..\target\release windows\installer.iss
 
       - name: Sign the installer
         if: env.CAN_SIGN == 'true'
@@ -83,10 +84,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
-      - run: cargo build --release -p earth-studio
+      - run: cargo build --release --workspace
       - run: |
           mkdir earth-studio
-          cp target/release/earth-studio README.md LICENSE earth-studio/
+          cp target/release/earth-studio target/release/earth README.md LICENSE earth-studio/
           tar czf ${{ matrix.archive }} earth-studio
       - uses: actions/upload-artifact@v4
         with:

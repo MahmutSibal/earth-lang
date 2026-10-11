@@ -462,3 +462,70 @@ fn types(types: &[Type], lang: Lang, or: &str) -> String {
         None => String::new(),
     }
 }
+
+/// Short phrases used by the command-line interface.
+pub mod cli {
+    use crate::keywords::Lang;
+
+    pub fn error_prefix(lang: Lang) -> &'static str {
+        match lang {
+            Lang::Tr => "Earth hatası",
+            Lang::En => "Earth error",
+        }
+    }
+
+    pub fn usage(lang: Lang) -> &'static str {
+        match lang {
+            Lang::Tr => "Kullanım: earth [--dil tr|en] [kaynak-dosyası.earth]",
+            Lang::En => "Usage: earth [--lang tr|en] [source-file.earth]",
+        }
+    }
+
+    pub fn help(lang: Lang) -> &'static str {
+        match lang {
+            Lang::Tr => {
+                "Dosya verilmezse etkileşimli kabuk (REPL) açılır.\n\
+                 Çıktı dili programın anahtar kelimelerinden algılanır; --dil ile seçilebilir."
+            }
+            Lang::En => {
+                "Without a file, an interactive shell (REPL) starts.\n\
+                 The output language is detected from the program's keywords; --lang overrides it."
+            }
+        }
+    }
+
+    pub fn unknown_language(lang: Lang, code: &str) -> String {
+        match lang {
+            Lang::Tr => format!("Bilinmeyen dil '{code}' (tr veya en kullanın)"),
+            Lang::En => format!("Unknown language '{code}' (use tr or en)"),
+        }
+    }
+
+    pub fn cannot_read(lang: Lang, path: &str, error: &std::io::Error) -> String {
+        match lang {
+            Lang::Tr => format!("'{path}' okunamadı: {error}"),
+            Lang::En => format!("Could not read '{path}': {error}"),
+        }
+    }
+
+    pub fn repl_banner(lang: Lang, version: &str) -> String {
+        match lang {
+            Lang::Tr => format!("Earth {version} — çıkmak için 'çık' yazın"),
+            Lang::En => format!("Earth {version} — type 'exit' to quit"),
+        }
+    }
+
+    pub fn press_enter(lang: Lang) -> &'static str {
+        match lang {
+            Lang::Tr => "Kapatmak için Enter'a basın...",
+            Lang::En => "Press Enter to close...",
+        }
+    }
+
+    pub fn repl_error(lang: Lang) -> &'static str {
+        match lang {
+            Lang::Tr => "Hata",
+            Lang::En => "Error",
+        }
+    }
+}
