@@ -82,7 +82,11 @@ pub enum ChatError {
     RateLimited,
     TooLong,
     UnknownModel,
-    Network,
+    /// No connection: the reason, as the system reported it.
+    Network(String),
+    /// GitHub Models answered with an error not covered above: the HTTP
+    /// status (none inside a stream) and its message, shown to the user.
+    Failed(String),
     Cancelled,
 }
 
@@ -271,7 +275,7 @@ fn complete(
             .header("Content-Type", "application/json")
             .header("User-Agent", "Earth-Studio")
             .send(body.to_string())
-            .map_err(|_| ChatError::Network)?;
+            .map_err(|error| ChatError::Network(error.to_string()))?;
         let status = response.status().as_u16();
         if status == 401 && !refreshed && token.refresh.is_some() {
             *token = auth::refresh_github(token).map_err(|_| ChatError::SignInNeeded)?;
@@ -287,13 +291,17 @@ fn complete(
     };
 
     let mut answer = String::new();
+    // Anything that is not an event, in case the answer is not a stream.
+    let mut other = String::new();
     let reader = BufReader::new(response.into_body().into_reader());
     for line in reader.lines() {
         if cancelled.load(Ordering::Relaxed) {
             return Err(ChatError::Cancelled);
         }
-        let line = line.map_err(|_| ChatError::Network)?;
+        let line = line.map_err(|error| ChatError::Network(error.to_string()))?;
         let Some(data) = line.trim().strip_prefix("data:") else {
+            other.push_str(&line);
+            other.push('\n');
             continue;
         };
         let data = data.trim();
@@ -312,13 +320,25 @@ fn complete(
         }
     }
     if answer.trim().is_empty() {
-        return Err(ChatError::Network);
+        // A whole JSON answer instead of a stream.
+        if let Ok(whole) = serde_json::from_str::<Value>(&other) {
+            if let Some(content) = whole["choices"][0]["message"]["content"].as_str() {
+                update(&|state| state.text.push_str(content));
+                return Ok(content.to_owned());
+            }
+        }
+        let body = if other.trim().is_empty() {
+            "empty answer"
+        } else {
+            &other
+        };
+        return Err(classify(0, body));
     }
     Ok(answer)
 }
 
-fn classify(status: u16, detail: &str) -> ChatError {
-    let detail = detail.to_lowercase();
+fn classify(status: u16, body: &str) -> ChatError {
+    let detail = body.to_lowercase();
     if detail.contains("tokens_limit_reached") || status == 413 {
         ChatError::TooLong
     } else if detail.contains("unknown_model") || detail.contains("unavailable_model") {
@@ -330,7 +350,25 @@ fn classify(status: u16, detail: &str) -> ChatError {
     } else if status == 403 {
         ChatError::NoAccess
     } else {
-        ChatError::Network
+        ChatError::Failed(describe(status, body))
+    }
+}
+
+/// "HTTP 404: message" from an error answer, short enough to show.
+fn describe(status: u16, body: &str) -> String {
+    let message = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|value| {
+            let error = &value["error"];
+            [&error["message"], &error["code"], &value["message"], error]
+                .into_iter()
+                .find_map(|field| field.as_str().map(str::to_owned))
+        })
+        .unwrap_or_else(|| body.trim().to_owned());
+    let message: String = message.chars().take(300).collect();
+    match status {
+        0 => message,
+        status => format!("HTTP {status}: {message}"),
     }
 }
 
@@ -620,7 +658,12 @@ mod tests {
                     }
                 }
                 requests.push(String::from_utf8_lossy(&request).into_owned());
-                let reply = if let Some(error) = answer.strip_prefix("HTTP ") {
+                let reply = if let Some(json) = answer.strip_prefix("JSON ") {
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{json}",
+                        json.len()
+                    )
+                } else if let Some(error) = answer.strip_prefix("HTTP ") {
                     let (status, body) = error.split_once(' ').unwrap();
                     format!(
                         "HTTP/1.1 {status} Error\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -713,6 +756,32 @@ mod tests {
     }
 
     #[test]
+    fn accepts_an_answer_that_is_not_streamed() {
+        let answer = json!({ "choices": [{ "message": { "content": "Merhaba!" } }] });
+        let (endpoint, server) = fake_models(vec![format!("JSON {answer}")]);
+        let request = request(endpoint);
+        let mut token = request.token.clone();
+        let entry = converse(&request, &mut token, &AtomicBool::new(false), &|_| {}).unwrap();
+        assert_eq!(entry.text, "Merhaba!");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn reports_a_connection_failure_with_its_reason() {
+        // Nothing listens on this port.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/chat", listener.local_addr().unwrap());
+        drop(listener);
+        let request = request(endpoint);
+        let mut token = request.token.clone();
+        let result = converse(&request, &mut token, &AtomicBool::new(false), &|_| {});
+        assert!(
+            matches!(&result, Err(ChatError::Network(reason)) if !reason.is_empty()),
+            "{result:?}"
+        );
+    }
+
+    #[test]
     fn explains_errors_from_github_models() {
         for (reply, expected) in [
             (
@@ -734,6 +803,14 @@ mod tests {
             (
                 "HTTP 400 {\"error\":{\"code\":\"unknown_model\"}}",
                 ChatError::UnknownModel,
+            ),
+            (
+                "HTTP 404 {\"error\":{\"code\":\"not_found\",\"message\":\"No such route\"}}",
+                ChatError::Failed("HTTP 404: No such route".to_owned()),
+            ),
+            (
+                "HTTP 500 oops",
+                ChatError::Failed("HTTP 500: oops".to_owned()),
             ),
         ] {
             let (endpoint, server) = fake_models(vec![reply.to_owned()]);
