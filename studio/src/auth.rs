@@ -5,14 +5,15 @@
 //! code, which Studio exchanges (with PKCE) for a token. GitHub uses the
 //! device flow: Studio shows a short code that the user enters on
 //! github.com/login/device. Either way Studio only reads the user's name,
-//! account and picture to show them; no token is kept.
+//! account and picture to show them. The GitHub token is kept (see
+//! `credentials`) only so that the assistant can use GitHub Models.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -62,6 +63,73 @@ pub struct Profile {
     pub avatar_url: String,
 }
 
+/// A GitHub user access token. GitHub App tokens expire after a few hours
+/// and come with a refresh token.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Token {
+    pub access: String,
+    pub refresh: Option<String>,
+    /// Seconds since the Unix epoch, if the token expires.
+    pub expires_at: Option<u64>,
+}
+
+impl Token {
+    fn from_response(response: &Value) -> Option<Self> {
+        let now = unix_now();
+        Some(Self {
+            access: response["access_token"].as_str()?.to_owned(),
+            refresh: response["refresh_token"].as_str().map(str::to_owned),
+            expires_at: response["expires_in"].as_u64().map(|seconds| now + seconds),
+        })
+    }
+
+    /// Expired, or about to expire within a minute.
+    pub fn is_expired(&self) -> bool {
+        self.expires_at
+            .is_some_and(|expires_at| unix_now() + 60 >= expires_at)
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::json!({
+            "access": self.access,
+            "refresh": self.refresh,
+            "expires_at": self.expires_at,
+        })
+        .to_string()
+    }
+
+    pub fn from_json(text: &str) -> Option<Self> {
+        let value: Value = serde_json::from_str(text).ok()?;
+        Some(Self {
+            access: value["access"].as_str()?.to_owned(),
+            refresh: value["refresh"].as_str().map(str::to_owned),
+            expires_at: value["expires_at"].as_u64(),
+        })
+    }
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+/// Exchanges a refresh token for a new token. Fails if the refresh token
+/// has expired too; the user then connects again.
+pub fn refresh_github(token: &Token) -> Result<Token, Failure> {
+    let refresh = token.refresh.as_deref().ok_or(Failure::Network)?;
+    let response = post_form(
+        GITHUB.token,
+        &[
+            ("client_id", GITHUB_CLIENT_ID),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh),
+        ],
+    )?;
+    Token::from_response(&response).ok_or(Failure::Network)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Failure {
     /// The user declined in the browser.
@@ -85,7 +153,8 @@ pub enum State {
         user_code: String,
         url: String,
     },
-    Done(Profile),
+    /// Signed in; GitHub also gives a token for the assistant.
+    Done(Profile, Option<Token>),
     Failed(Failure),
 }
 
@@ -119,12 +188,13 @@ impl SignIn {
                     wake();
                 };
                 let result = match provider {
-                    Provider::Google => google(&report, &cancelled),
-                    Provider::GitHub => github(&GITHUB, &report, &cancelled),
+                    Provider::Google => google(&report, &cancelled).map(|profile| (profile, None)),
+                    Provider::GitHub => github(&GITHUB, &report, &cancelled)
+                        .map(|(profile, token)| (profile, Some(token))),
                 };
                 if !cancelled.load(Ordering::Relaxed) {
                     report(match result {
-                        Ok(profile) => State::Done(profile),
+                        Ok((profile, token)) => State::Done(profile, token),
                         Err(failure) => State::Failed(failure),
                     });
                 }
@@ -293,7 +363,7 @@ fn github(
     urls: &GitHubUrls,
     report: &dyn Fn(State),
     cancelled: &AtomicBool,
-) -> Result<Profile, Failure> {
+) -> Result<(Profile, Token), Failure> {
     let device = post_form(urls.device_code, &[("client_id", GITHUB_CLIENT_ID)])?;
     if device["error"] == "device_flow_disabled" {
         return Err(Failure::DeviceFlowDisabled);
@@ -311,7 +381,7 @@ fn github(
     });
 
     let deadline = Instant::now() + Duration::from_secs(expires).min(TIMEOUT);
-    let access_token = loop {
+    let token = loop {
         sleep_unless_cancelled(Duration::from_secs(interval), cancelled)?;
         if Instant::now() > deadline {
             return Err(Failure::TimedOut);
@@ -324,8 +394,8 @@ fn github(
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ],
         )?;
-        if let Some(token) = token["access_token"].as_str() {
-            break token.to_owned();
+        if let Some(token) = Token::from_response(&token) {
+            break token;
         }
         match token["error"].as_str() {
             Some("authorization_pending") => {}
@@ -337,10 +407,10 @@ fn github(
         }
     };
 
-    let user = get_json(urls.user, &access_token)?;
+    let user = get_json(urls.user, &token.access)?;
     let login = user["login"].as_str().ok_or(Failure::Network)?;
     let avatar = user["avatar_url"].as_str().unwrap_or_default();
-    Ok(Profile {
+    let profile = Profile {
         provider: Provider::GitHub,
         name: user["name"]
             .as_str()
@@ -356,7 +426,8 @@ fn github(
                 if avatar.contains('?') { '&' } else { '?' }
             )
         },
-    })
+    };
+    Ok((profile, token))
 }
 
 fn sleep_unless_cancelled(duration: Duration, cancelled: &AtomicBool) -> Result<(), Failure> {
@@ -591,7 +662,8 @@ mod tests {
         };
         let states = Mutex::new(Vec::new());
         let report = |state: State| states.lock().unwrap().push(state);
-        let profile = github(&urls, &report, &AtomicBool::new(false)).unwrap();
+        let (profile, token) = github(&urls, &report, &AtomicBool::new(false)).unwrap();
+        assert_eq!(token.access, "tok");
 
         assert_eq!(
             profile,

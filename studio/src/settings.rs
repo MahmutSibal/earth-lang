@@ -21,6 +21,9 @@ pub struct Settings {
     pub font_size: f32,
     pub auto_update: bool,
     pub profile: Option<Profile>,
+    /// The GitHub Models model the assistant uses.
+    pub assistant_model: String,
+    pub assistant_open: bool,
 }
 
 impl Default for Settings {
@@ -30,6 +33,8 @@ impl Default for Settings {
             font_size: 15.0,
             auto_update: true,
             profile: None,
+            assistant_model: crate::assistant::DEFAULT_MODEL.to_owned(),
+            assistant_open: false,
         }
     }
 }
@@ -77,6 +82,18 @@ impl Settings {
             auto_update: value["auto_update"]
                 .as_bool()
                 .unwrap_or(defaults.auto_update),
+            assistant_model: value["assistant_model"]
+                .as_str()
+                .filter(|model| {
+                    crate::assistant::MODELS
+                        .iter()
+                        .any(|(known, _)| known == model)
+                })
+                .map(str::to_owned)
+                .unwrap_or(defaults.assistant_model),
+            assistant_open: value["assistant_open"]
+                .as_bool()
+                .unwrap_or(defaults.assistant_open),
             profile: provider.map(|provider| Profile {
                 provider,
                 name: text(&profile["name"]),
@@ -94,6 +111,8 @@ impl Settings {
             },
             "font_size": self.font_size,
             "auto_update": self.auto_update,
+            "assistant_model": self.assistant_model,
+            "assistant_open": self.assistant_open,
             "profile": self.profile.as_ref().map(|profile| json!({
                 "provider": match profile.provider {
                     Provider::Google => "google",
@@ -112,8 +131,13 @@ fn text(value: &Value) -> String {
 }
 
 fn file() -> Option<PathBuf> {
+    Some(folder()?.join("settings.json"))
+}
+
+/// Studio's own folder for settings and the like.
+pub fn folder() -> Option<PathBuf> {
     let home = || std::env::var_os("HOME").map(PathBuf::from);
-    let folder = if cfg!(windows) {
+    if cfg!(windows) {
         std::env::var_os("APPDATA").map(|folder| PathBuf::from(folder).join("Earth Studio"))
     } else if cfg!(target_os = "macos") {
         home().map(|home| home.join("Library/Application Support/Earth Studio"))
@@ -122,8 +146,7 @@ fn file() -> Option<PathBuf> {
             .map(PathBuf::from)
             .or_else(|| home().map(|home| home.join(".config")))
             .map(|folder| folder.join("earth-studio"))
-    };
-    Some(folder?.join("settings.json"))
+    }
 }
 
 #[cfg(test)]
@@ -136,6 +159,8 @@ mod tests {
             lang: Lang::En,
             font_size: 18.0,
             auto_update: false,
+            assistant_model: "openai/gpt-4o-mini".to_owned(),
+            assistant_open: true,
             profile: Some(Profile {
                 provider: Provider::GitHub,
                 name: "Mahmut".to_owned(),

@@ -53,6 +53,7 @@ fib(20) = 6765
 - [Hızlı başlangıç](#hızlı-başlangıç)
 - [Earth Studio](#earth-studio)
   - [Hesap ve ayarlar](#hesap-ve-ayarlar)
+  - [Earth Asistan](#earth-asistan)
 - [Komut satırı: `earth`](#komut-satırı-earth)
 - [Dil öğreticisi](#dil-öğreticisi)
   - [İlk program](#1-ilk-program) ·
@@ -129,6 +130,7 @@ fib(20) = 6765
 | **Araç çubuğu** (üst) | 📂 Klasör Aç, 📚 Örnekler, 📄 Yeni, 💾 Kaydet, ▶ Çalıştır, ⏹ Durdur ve arayüz dili (Türkçe/English). |
 | **Gezgin** (sol) | Açık klasördeki dosyalar. Bir dosyaya tıklamak onu yeni bir sekmede açar. **+ Dosya** klasörde yeni bir `.earth` dosyası oluşturur, **⟳** listeyi yeniler. |
 | **Editör** (orta) | Sekmeli kod editörü: satır numaraları ve renklendirme. Kaydedilmemiş dosyanın sekmesinde `•` görünür. Hata veren satır kırmızıyla işaretlenir. |
+| **Earth Asistan** (sağ, ✨ Asistan ya da Ctrl+I) | Yapay zekâ ile sohbet: kod yazdır, kodunu açıklat, hatanı düzelttir. Ayrıntılar: [Earth Asistan](#earth-asistan). |
 | **Hesap ve ayarlar** (sol alt köşe) | **👤 Giriş yap** ile Google ya da GitHub hesabınla giriş, **⚙** ile ayarlar. Ayrıntılar: [Hesap ve ayarlar](#hesap-ve-ayarlar). |
 | **Terminal** (editörün altı) | Programın çıktısı burada akar. Program `girdi` ile bir şey sorduğunda cevabı alttaki satıra yazarsın. Program çalışmıyorken aynı satır bir Earth komut satırıdır (REPL). Kenarından sürükleyerek büyütülebilir. |
 | **Durum çubuğu** (en alt) | Solda toplam indirme sayısı ve programın durumu (Hazır, Çalışıyor…, Girdi bekleniyor); sağda imlecin satır ve sütunu, dosyanın algılanan dili ve Studio'nun sürümü. |
@@ -195,7 +197,7 @@ olup olmadığına bakar. Yeni sürüm varsa:
 3. Şeride dokunmazsan güncelleme Studio kapatılırken sessizce kurulur; bir
    sonraki açılışta yeni sürüm çalışır.
 
-Durum çubuğundaki sürüm numarasına (`v0.8.0` gibi) tıklamak hemen denetler.
+Durum çubuğundaki sürüm numarasına (`v0.9.0` gibi) tıklamak hemen denetler.
 Sol alt köşedeki **⬇ … kişi indirdi** sayacı, kurulum dosyasının GitHub'dan
 toplam indirilme sayısıdır. Studio senin hakkında hiçbir bilgi göndermez;
 yalnızca herkese açık sürüm bilgisini okur.
@@ -218,11 +220,50 @@ Sol alt köşede iki düğme var:
 - **⚙ Ayarlar**:
   - **Arayüz dili**: Türkçe ya da English.
   - **Editör yazı boyutu**: 11–24.
+  - **Asistan modeli**: GPT-4.1, GPT-4.1 mini, GPT-4o ya da GPT-4o mini.
   - **Güncellemeleri otomatik indir ve kur**: Studio yeniden açılınca
     geçerli olur.
 
 Ayarlar `%APPDATA%\Earth Studio\settings.json` dosyasında saklanır (Linux'ta
 `~/.config/earth-studio`, macOS'ta `~/Library/Application Support/Earth Studio`).
+
+### Earth Asistan
+
+![Earth Asistan](docs/asistan.png)
+
+Sağdaki **Earth Asistan** paneli (araç çubuğunda **✨ Asistan** ya da
+**Ctrl+I**) yapay zekâ ile sohbet etmeni sağlar: "bana bir sayı tahmin oyunu
+yaz", "bu dosya ne yapıyor?", "bu döngüyü açıkla" gibi.
+
+- **Bağlanmak:** Panelde **GitHub ile bağlan**a bas, gösterilen kodu
+  `github.com/login/device` sayfasına gir. Asistan
+  [GitHub Models](https://github.com/marketplace/models) kullanır; ücretsizdir
+  ama günlük ve dakikalık kullanım sınırları vardır. Sınıra ulaşırsan biraz
+  bekle ya da ayarlardan başka bir model seç (mini modellerin sınırı daha
+  geniştir).
+- **Earth'ü bilir:** Hiçbir yapay zekâ modeli Earth'ü önceden bilmez. Bu
+  yüzden asistan her soruda Earth'ün anahtar kelimelerini, yerleşik
+  fonksiyonlarını ve kurallarını modele verir.
+- **Kodunu kontrol eder:** Cevaptaki her Earth kodu, sana gösterilmeden önce
+  Earth'ün kendi ayrıştırıcısıyla denetlenir. Hatalıysa asistan hatayı
+  modele gösterip kodu düzelttirir. Kontrolden geçen kodun altında
+  **✔ Earth ayrıştırıcısı bu kodu kontrol etti** yazar.
+- **Kodu kullanmak:** Her kod bloğunun altında **📋 Kopyala**, **⤵ Editöre
+  ekle** (imlecin olduğu yere), **📝 Dosyayı değiştir** ve **📄 Yeni dosya**
+  düğmeleri vardır. **Dosyayı değiştir**, uygulamadan önce neyin
+  değişeceğini (eklenen satırlar yeşil, silinenler kırmızı) gösterir.
+  Asistanın yaptığı son değişiklik **↩ Geri al** ile geri alınır.
+- **Hatayı açıkla:** Programın hata verince terminalde **✨ Hatayı açıkla**
+  düğmesi çıkar; asistan hatanın ne demek olduğunu ve nasıl düzeltileceğini
+  anlatır.
+- **Açık dosyayı gönder** işaretliyse açık dosyan soruyla birlikte gönderilir;
+  asistan böylece kodun hakkında konuşabilir. İşareti kaldırırsan dosya
+  gönderilmez.
+
+Asistanı kullandığında sorun, sohbet geçmişi ve (işaretliyse) açık dosyan
+cevap üretilmesi için GitHub Models'e gönderilir. GitHub erişim anahtarı
+Windows'ta **Kimlik Bilgileri Yöneticisi**'nde şifreli saklanır; **⚙ →
+GitHub bağlantısını kaldır** ya da **Çıkış yap** onu siler.
 
 ## Komut satırı: `earth`
 
@@ -239,7 +280,7 @@ gelir) her yeni Komut İstemi ya da PowerShell penceresinde kullanılabilir:
 
 ```text
 C:\Users\sen> earth
-Earth 0.8.0 — çıkmak için 'çık' yazın
+Earth 0.9.0 — çıkmak için 'çık' yazın
 earth> değişken fiyat = 120
 earth> fiyat * 1.2
 144
@@ -1000,8 +1041,9 @@ sorun olursa ekran kartı sürücülerini güncelle ya da
 
 **Studio benim hakkımda bilgi gönderiyor mu?** Hayır. Yalnızca GitHub'daki
 herkese açık sürüm bilgisini ve indirme sayısını okur. Giriş yaparsan
-profil bilgilerin sadece bu bilgisayarda saklanır; hiçbir sunucuya
-gönderilmez.
+profil bilgilerin sadece bu bilgisayarda saklanır. Tek istisna Earth
+Asistan'dır: onu kullandığında sorun ve (istersen) açık dosyan cevap için
+GitHub Models'e gönderilir.
 
 **Bir hata buldum ya da önerim var.**
 [Issues](https://github.com/MahmutSibal/earth-lang/issues) sayfasından
@@ -1050,7 +1092,8 @@ earth-lang/
 │   ├── stdlib.rs         girdi/çıktı dışındaki yerleşik fonksiyonlar
 │   └── main.rs           komut satırı: earth ve earth dosya.earth
 ├── studio/               Earth Studio (egui)
-│   └── src/              arayüz, renklendirme, çalıştırıcı, güncelleyici
+│   └── src/              arayüz, renklendirme, çalıştırıcı, güncelleyici,
+│                         giriş, ayarlar, Earth Asistan
 ├── examples/             örnek programlar (Studio'ya gömülür)
 ├── editors/vscode/       VS Code sözdizimi renklendirme eklentisi
 ├── windows/              simge, manifest, Inno Setup kurulum betiği
@@ -1125,6 +1168,7 @@ renklendirme eklentisidir; kurulumu
 - [x] Earth Studio: gezgin, sekmeli editör, terminal, REPL
 - [x] Windows kurulum programı, otomatik güncelleme
 - [x] Komut satırı: `earth` kabuğu ve `earth dosya.earth`
+- [x] Earth Asistan: GitHub Models ile sohbet, ayrıştırıcıyla denetlenen kod
 - [x] VS Code sözdizimi renklendirme
 - [ ] Dosya okuma ve yazma
 - [ ] Sınıflar / kullanıcı tanımlı türler

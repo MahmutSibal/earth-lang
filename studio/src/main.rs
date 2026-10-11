@@ -8,7 +8,9 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
 mod app;
+mod assistant;
 mod auth;
+mod credentials;
 mod files;
 mod highlight;
 mod runner;

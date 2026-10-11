@@ -180,6 +180,11 @@ pub fn language_of(word: &str) -> Option<Lang> {
         .or_else(|| lookup(BUILTINS, word).map(|(_, lang)| lang))
 }
 
+/// Every keyword, in the order of the reference.
+pub fn all_keywords() -> impl Iterator<Item = Keyword> {
+    KEYWORDS.iter().map(|(keyword, _)| *keyword)
+}
+
 /// Every (spelling, builtin) pair, used to populate the global scope.
 pub fn builtins() -> impl Iterator<Item = (&'static str, Builtin)> {
     BUILTINS.iter().flat_map(|(builtin, spellings)| {
