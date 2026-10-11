@@ -197,7 +197,7 @@ olup olmadığına bakar. Yeni sürüm varsa:
 3. Şeride dokunmazsan güncelleme Studio kapatılırken sessizce kurulur; bir
    sonraki açılışta yeni sürüm çalışır.
 
-Durum çubuğundaki sürüm numarasına (`v0.9.1` gibi) tıklamak hemen denetler.
+Durum çubuğundaki sürüm numarasına (`v0.9.2` gibi) tıklamak hemen denetler.
 Sol alt köşedeki **⬇ … kişi indirdi** sayacı, kurulum dosyasının GitHub'dan
 toplam indirilme sayısıdır. Studio senin hakkında hiçbir bilgi göndermez;
 yalnızca herkese açık sürüm bilgisini okur.
@@ -280,7 +280,7 @@ gelir) her yeni Komut İstemi ya da PowerShell penceresinde kullanılabilir:
 
 ```text
 C:\Users\sen> earth
-Earth 0.9.1 — çıkmak için 'çık' yazın
+Earth 0.9.2 — çıkmak için 'çık' yazın
 earth> değişken fiyat = 120
 earth> fiyat * 1.2
 144
