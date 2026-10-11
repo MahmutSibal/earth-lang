@@ -1,5 +1,7 @@
 //! Earth Assistant: a chat about Earth programs, answered by a model from
-//! GitHub Models with the user's GitHub sign-in.
+//! an AI service the user picks (Google Gemini, OpenRouter, OpenAI, a local
+//! Ollama or LM Studio, or any other OpenAI-compatible address) with the
+//! user's own API key.
 //!
 //! No model knows Earth, so every request starts with a short reference of
 //! the language (`assistant_reference.md`). Before an answer is shown as
@@ -15,23 +17,84 @@ use std::thread;
 use earth::Lang;
 use serde_json::{json, Value};
 
-use crate::auth::{self, Token};
+/// The services the assistant can use. All of them speak the OpenAI chat
+/// completions protocol, so only the address and the key differ. Model
+/// names change often, so they are listed from the service, never fixed
+/// here.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Service {
+    /// Free with a key from Google AI Studio (Flash models).
+    Gemini,
+    /// Free models (`:free`) with an OpenRouter key.
+    OpenRouter,
+    OpenAI,
+    /// Ollama or LM Studio on this computer: free, offline, no key.
+    Local,
+    /// Any OpenAI-compatible address.
+    Custom,
+}
 
-pub const ENDPOINT: &str = "https://models.github.ai/inference/chat/completions";
+impl Service {
+    pub const ALL: [Service; 5] = [
+        Service::Gemini,
+        Service::OpenRouter,
+        Service::OpenAI,
+        Service::Local,
+        Service::Custom,
+    ];
 
-/// Models offered in the settings: (GitHub Models id, name shown).
-pub const MODELS: &[(&str, &str)] = &[
-    ("openai/gpt-4.1", "GPT-4.1"),
-    ("openai/gpt-4.1-mini", "GPT-4.1 mini"),
-    ("openai/gpt-4o", "GPT-4o"),
-    ("openai/gpt-4o-mini", "GPT-4o mini"),
-];
-pub const DEFAULT_MODEL: &str = "openai/gpt-4.1";
+    pub fn id(self) -> &'static str {
+        match self {
+            Service::Gemini => "gemini",
+            Service::OpenRouter => "openrouter",
+            Service::OpenAI => "openai",
+            Service::Local => "local",
+            Service::Custom => "custom",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|service| service.id() == id)
+    }
+
+    /// The service's address; `Custom` has none of its own.
+    pub fn base_url(self) -> Option<&'static str> {
+        match self {
+            Service::Gemini => Some("https://generativelanguage.googleapis.com/v1beta/openai/"),
+            Service::OpenRouter => Some("https://openrouter.ai/api/v1/"),
+            Service::OpenAI => Some("https://api.openai.com/v1/"),
+            Service::Local => Some("http://localhost:11434/v1/"),
+            Service::Custom => None,
+        }
+    }
+
+    pub fn needs_key(self) -> bool {
+        matches!(
+            self,
+            Service::Gemini | Service::OpenRouter | Service::OpenAI
+        )
+    }
+
+    /// Where the user gets an API key.
+    pub fn key_page(self) -> Option<&'static str> {
+        match self {
+            Service::Gemini => Some("https://aistudio.google.com/apikey"),
+            Service::OpenRouter => Some("https://openrouter.ai/keys"),
+            Service::OpenAI => Some("https://platform.openai.com/api-keys"),
+            Service::Local | Service::Custom => None,
+        }
+    }
+}
+
+/// `base` + `path`, with exactly one slash between them.
+pub fn url(base: &str, path: &str) -> String {
+    format!("{}/{path}", base.trim().trim_end_matches('/'))
+}
 
 const REFERENCE: &str = include_str!("assistant_reference.md");
 const MAX_FIXES: usize = 2;
-/// Free GitHub Models requests accept only a few thousand tokens, so the
-/// open file and the history are cut to fit.
+/// Free tiers accept only a few thousand tokens per request, so the open
+/// file and the history are cut to fit.
 const FILE_LIMIT: usize = 8_000;
 const HISTORY_LIMIT: usize = 8_000;
 
@@ -75,16 +138,14 @@ pub enum Phase {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ChatError {
-    /// No token, or it expired and could not be refreshed.
-    SignInNeeded,
-    /// The token may not use GitHub Models (the Models permission).
-    NoAccess,
+    /// The service refused the API key.
+    InvalidKey,
     RateLimited,
     TooLong,
     UnknownModel,
     /// No connection: the reason, as the system reported it.
     Network(String),
-    /// GitHub Models answered with an error not covered above: the HTTP
+    /// The service answered with an error not covered above: the HTTP
     /// status (none inside a stream) and its message, shown to the user.
     Failed(String),
     Cancelled,
@@ -100,8 +161,6 @@ struct Shared {
     text: String,
     phase: Phase,
     result: Option<Result<Entry, ChatError>>,
-    /// A token refreshed during the request, for Studio to keep.
-    refreshed: Option<Token>,
 }
 
 /// One answer being written in the background.
@@ -111,8 +170,8 @@ pub struct Job {
 }
 
 pub struct Request {
-    pub endpoint: String,
-    pub token: Token,
+    pub base_url: String,
+    pub api_key: Option<String>,
     pub model: String,
     pub system: String,
     pub history: Vec<Entry>,
@@ -124,7 +183,6 @@ impl Job {
             text: String::new(),
             phase: Phase::Writing,
             result: None,
-            refreshed: None,
         }));
         let cancelled = Arc::new(AtomicBool::new(false));
         let job = Self {
@@ -140,14 +198,8 @@ impl Job {
                     }
                     wake();
                 };
-                let mut token = request.token.clone();
-                let result = converse(&request, &mut token, &cancelled, &update);
-                update(&|state| {
-                    if token != request.token {
-                        state.refreshed = Some(token.clone());
-                    }
-                    state.result = Some(result.clone());
-                });
+                let result = converse(&request, &cancelled, &update);
+                update(&|state| state.result = Some(result.clone()));
             });
         job
     }
@@ -162,10 +214,6 @@ impl Job {
 
     pub fn take_result(&self) -> Option<Result<Entry, ChatError>> {
         self.shared.lock().ok()?.result.take()
-    }
-
-    pub fn take_refreshed_token(&self) -> Option<Token> {
-        self.shared.lock().ok()?.refreshed.take()
     }
 
     pub fn cancel(&self) {
@@ -183,12 +231,11 @@ type Update<'a> = dyn Fn(&dyn Fn(&mut Shared)) + 'a;
 
 fn converse(
     request: &Request,
-    token: &mut Token,
     cancelled: &AtomicBool,
     update: &Update,
 ) -> Result<Entry, ChatError> {
     let mut messages = messages(&request.system, &request.history);
-    let mut answer = complete(request, token, &messages, cancelled, update)?;
+    let mut answer = complete(request, &messages, cancelled, update)?;
     for _ in 0..MAX_FIXES {
         let problems = check_code(&answer);
         if problems.is_empty() {
@@ -200,7 +247,7 @@ fn converse(
         });
         messages.push(json!({ "role": "assistant", "content": answer }));
         messages.push(json!({ "role": "user", "content": fix_request(&problems) }));
-        answer = complete(request, token, &messages, cancelled, update)?;
+        answer = complete(request, &messages, cancelled, update)?;
     }
     let check = if code_blocks(&answer).is_empty() {
         Check::NoCode
@@ -254,19 +301,15 @@ fn messages(system: &str, history: &[Entry]) -> Vec<Value> {
 /// streams), asked again without streaming.
 fn complete(
     request: &Request,
-    token: &mut Token,
     messages: &[Value],
     cancelled: &AtomicBool,
     update: &Update,
 ) -> Result<String, ChatError> {
-    if token.is_expired() {
-        *token = auth::refresh_github(token).map_err(|_| ChatError::SignInNeeded)?;
-    }
-    match exchange(request, token, messages, true, cancelled, update)? {
+    match exchange(request, messages, true, cancelled, update)? {
         Outcome::Answer(answer) => Ok(answer),
         Outcome::NotAnAnswer(first) => {
             update(&|state| state.text.clear());
-            match exchange(request, token, messages, false, cancelled, update)? {
+            match exchange(request, messages, false, cancelled, update)? {
                 Outcome::Answer(answer) => Ok(answer),
                 Outcome::NotAnAnswer(second) => Err(ChatError::Failed(format!(
                     "{first} | stream: off → {second}"
@@ -284,7 +327,6 @@ enum Outcome {
 
 fn exchange(
     request: &Request,
-    token: &mut Token,
     messages: &[Value],
     stream: bool,
     cancelled: &AtomicBool,
@@ -295,36 +337,25 @@ fn exchange(
         "messages": messages,
         "stream": stream,
     });
-    let mut refreshed = false;
-    let response = loop {
-        // Redirects are not followed: a POST that is redirected loses its
-        // body, and where it was sent is worth reporting.
-        let response = crate::update::agent(0)
-            .post(&request.endpoint)
-            .header("Authorization", &format!("Bearer {}", token.access))
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("Content-Type", "application/json")
-            .header("User-Agent", "Earth-Studio")
-            .send(body.to_string())
-            .map_err(|error| ChatError::Network(error.to_string()))?;
-        let status = response.status().as_u16();
-        if status == 401 && !refreshed && token.refresh.is_some() {
-            *token = auth::refresh_github(token).map_err(|_| ChatError::SignInNeeded)?;
-            refreshed = true;
-            continue;
-        }
-        if response.status().is_success() {
-            break response;
-        }
-        if response.status().is_redirection() {
-            let location = header(&response, "location");
-            return Err(ChatError::Failed(format!("HTTP {status} → {location}")));
-        }
+    // Redirects are not followed: a POST that is redirected loses its body,
+    // and where it was sent is worth reporting.
+    let response = authorized(
+        crate::update::agent(0).post(&url(&request.base_url, "chat/completions")),
+        request,
+    )
+    .header("Content-Type", "application/json")
+    .send(body.to_string())
+    .map_err(|error| ChatError::Network(error.to_string()))?;
+    let status = response.status().as_u16();
+    if response.status().is_redirection() {
+        let location = header(&response, "location");
+        return Err(ChatError::Failed(format!("HTTP {status} → {location}")));
+    }
+    if !response.status().is_success() {
         let mut response = response;
         let detail = response.body_mut().read_to_string().unwrap_or_default();
         return Err(classify(status, &detail));
-    };
+    }
 
     let status = response.status().as_u16();
     let content_type = header(&response, "content-type");
@@ -381,6 +412,107 @@ fn exchange(
     )))
 }
 
+/// Adds the key and the headers every service gets.
+fn authorized<B>(builder: ureq::RequestBuilder<B>, request: &Request) -> ureq::RequestBuilder<B> {
+    let mut builder = builder
+        .header("Accept", "application/json, text/event-stream")
+        .header("User-Agent", "Earth-Studio");
+    if let Some(key) = request.api_key.as_deref().filter(|key| !key.is_empty()) {
+        builder = builder.header("Authorization", &format!("Bearer {key}"));
+    }
+    // OpenRouter shows the app's name in its usage pages.
+    if request.base_url.contains("openrouter.ai") {
+        builder = builder
+            .header("HTTP-Referer", crate::update::PROJECT_URL)
+            .header("X-Title", "Earth Studio");
+    }
+    builder
+}
+
+/// The chat models a service offers, best guess for Earth first.
+pub fn list_models(
+    service: Service,
+    base_url: &str,
+    api_key: Option<&str>,
+) -> Result<Vec<String>, ChatError> {
+    let request = Request {
+        base_url: base_url.to_owned(),
+        api_key: api_key.map(str::to_owned),
+        model: String::new(),
+        system: String::new(),
+        history: Vec::new(),
+    };
+    let mut response = authorized(
+        crate::update::agent(0).get(&url(base_url, "models")),
+        &request,
+    )
+    .call()
+    .map_err(|error| ChatError::Network(error.to_string()))?;
+    let status = response.status().as_u16();
+    let body = response.body_mut().read_to_string().unwrap_or_default();
+    if !response.status().is_success() {
+        return Err(classify(status, &body));
+    }
+    let value: Value =
+        serde_json::from_str(&body).map_err(|_| ChatError::Failed(describe(status, &body)))?;
+    let mut models: Vec<String> = value["data"]
+        .as_array()
+        .or_else(|| value["models"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|model| model["id"].as_str().or_else(|| model["name"].as_str()))
+        .map(|id| id.strip_prefix("models/").unwrap_or(id).to_owned())
+        .filter(|id| is_chat_model(id))
+        .collect();
+    models.sort();
+    models.dedup();
+    if let Some(best) = preferred_model(service, &models) {
+        let best = best.to_owned();
+        models.retain(|model| *model != best);
+        models.insert(0, best);
+    }
+    Ok(models)
+}
+
+fn is_chat_model(id: &str) -> bool {
+    let id = id.to_lowercase();
+    ![
+        "embed",
+        "tts",
+        "image",
+        "audio",
+        "whisper",
+        "dall-e",
+        "moderation",
+        "transcribe",
+        "imagen",
+        "veo",
+        "aqa",
+        "realtime",
+        "search",
+    ]
+    .iter()
+    .any(|word| id.contains(word))
+}
+
+/// The model to start with: a fast, free one where the service has one.
+fn preferred_model(service: Service, models: &[String]) -> Option<&str> {
+    let find = |test: &dyn Fn(&str) -> bool| models.iter().map(String::as_str).find(|id| test(id));
+    match service {
+        Service::Gemini => find(&|id| {
+            id.contains("flash")
+                && !id.contains("lite")
+                && !id.contains("preview")
+                && !id.contains("exp")
+        })
+        .or_else(|| find(&|id| id.contains("flash"))),
+        Service::OpenRouter => find(&|id| id.ends_with(":free")),
+        Service::OpenAI => find(&|id| id.starts_with("gpt-") && id.contains("mini")),
+        Service::Local | Service::Custom => None,
+    }
+    .or_else(|| models.first().map(String::as_str))
+}
+
 fn header(response: &ureq::http::Response<ureq::Body>, name: &str) -> String {
     response
         .headers()
@@ -392,16 +524,35 @@ fn header(response: &ureq::http::Response<ureq::Body>, name: &str) -> String {
 
 fn classify(status: u16, body: &str) -> ChatError {
     let detail = body.to_lowercase();
-    if detail.contains("tokens_limit_reached") || status == 413 {
+    let mentions = |words: &[&str]| words.iter().any(|word| detail.contains(word));
+    if status == 413
+        || mentions(&[
+            "tokens_limit_reached",
+            "context_length_exceeded",
+            "too long",
+        ])
+    {
         ChatError::TooLong
-    } else if detail.contains("unknown_model") || detail.contains("unavailable_model") {
-        ChatError::UnknownModel
-    } else if status == 429 || detail.contains("ratelimit") || detail.contains("rate limit") {
+    } else if status == 429 || mentions(&["rate limit", "ratelimit", "resource_exhausted", "quota"])
+    {
         ChatError::RateLimited
-    } else if status == 401 {
-        ChatError::SignInNeeded
-    } else if status == 403 {
-        ChatError::NoAccess
+    } else if status == 401
+        || status == 403
+        || mentions(&[
+            "api key not valid",
+            "invalid api key",
+            "incorrect api key",
+            "invalid_api_key",
+        ])
+    {
+        ChatError::InvalidKey
+    } else if mentions(&[
+        "unknown_model",
+        "model_not_found",
+        "is not found for api version",
+    ]) || (status == 404 && detail.contains("model"))
+    {
+        ChatError::UnknownModel
     } else {
         ChatError::Failed(describe(status, body))
     }
@@ -685,7 +836,7 @@ mod tests {
     /// and body when the answer starts with a status code.
     fn fake_models(answers: Vec<String>) -> (String, thread::JoinHandle<Vec<String>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}/chat/completions", listener.local_addr().unwrap());
+        let endpoint = format!("http://{}/v1/", listener.local_addr().unwrap());
         let server = thread::spawn(move || {
             let mut requests = Vec::new();
             for answer in answers {
@@ -757,15 +908,11 @@ mod tests {
         (endpoint, server)
     }
 
-    fn request(endpoint: String) -> Request {
+    fn request(base_url: String) -> Request {
         Request {
-            endpoint,
-            token: Token {
-                access: "ghu_test".to_owned(),
-                refresh: None,
-                expires_at: None,
-            },
-            model: DEFAULT_MODEL.to_owned(),
+            base_url,
+            api_key: Some("sk-test".to_owned()),
+            model: "test-model".to_owned(),
             system: system_prompt(Lang::Tr, None),
             history: vec![Entry::user("1'den 3'e kadar yaz".to_owned())],
         }
@@ -778,20 +925,18 @@ mod tests {
             "Şöyle:\n```earth\nher i içinde aralık(1, 4) {\n    yaz(i)\n}\n```".to_owned(),
         ]);
         let request = request(endpoint);
-        let mut token = request.token.clone();
         let phases = Mutex::new(Vec::new());
         let shared = Mutex::new(Shared {
             text: String::new(),
             phase: Phase::Writing,
             result: None,
-            refreshed: None,
         });
         let update = |change: &dyn Fn(&mut Shared)| {
             let mut state = shared.lock().unwrap();
             change(&mut state);
             phases.lock().unwrap().push(state.phase);
         };
-        let entry = converse(&request, &mut token, &AtomicBool::new(false), &update).unwrap();
+        let entry = converse(&request, &AtomicBool::new(false), &update).unwrap();
 
         assert_eq!(entry.check, Check::Passed);
         assert!(entry.text.contains("yaz(i)"));
@@ -801,7 +946,12 @@ mod tests {
         let requests = server.join().unwrap();
         assert!(requests[0]
             .to_lowercase()
-            .contains("authorization: bearer ghu_test"));
+            .contains("authorization: bearer sk-test"));
+        assert!(
+            requests[0].starts_with("POST /v1/chat/completions"),
+            "{}",
+            requests[0]
+        );
         assert!(requests[0].contains("\"stream\":true"));
         assert!(requests[1].contains("parser rejected"), "{}", requests[1]);
     }
@@ -811,8 +961,7 @@ mod tests {
         let broken = "```earth\nx += 1\n```".to_owned();
         let (endpoint, server) = fake_models(vec![broken.clone(), broken.clone(), broken]);
         let request = request(endpoint);
-        let mut token = request.token.clone();
-        let entry = converse(&request, &mut token, &AtomicBool::new(false), &|_| {}).unwrap();
+        let entry = converse(&request, &AtomicBool::new(false), &|_| {}).unwrap();
         assert_eq!(entry.check, Check::Failed);
         assert_eq!(server.join().unwrap().len(), 1 + MAX_FIXES);
     }
@@ -822,8 +971,7 @@ mod tests {
         let answer = json!({ "choices": [{ "message": { "content": "Merhaba!" } }] });
         let (endpoint, server) = fake_models(vec![format!("JSON {answer}")]);
         let request = request(endpoint);
-        let mut token = request.token.clone();
-        let entry = converse(&request, &mut token, &AtomicBool::new(false), &|_| {}).unwrap();
+        let entry = converse(&request, &AtomicBool::new(false), &|_| {}).unwrap();
         assert_eq!(entry.text, "Merhaba!");
         server.join().unwrap();
     }
@@ -833,8 +981,7 @@ mod tests {
         let answer = json!({ "choices": [{ "message": { "content": "Merhaba!" } }] });
         let (endpoint, server) = fake_models(vec!["TEXT OK".to_owned(), format!("JSON {answer}")]);
         let request = request(endpoint);
-        let mut token = request.token.clone();
-        let entry = converse(&request, &mut token, &AtomicBool::new(false), &|_| {}).unwrap();
+        let entry = converse(&request, &AtomicBool::new(false), &|_| {}).unwrap();
         assert_eq!(entry.text, "Merhaba!");
         let requests = server.join().unwrap();
         assert!(requests[0].contains("\"stream\":true"));
@@ -845,8 +992,7 @@ mod tests {
     fn reports_what_came_back_instead_of_an_answer() {
         let (endpoint, server) = fake_models(vec!["TEXT OK".to_owned(), "TEXT OK".to_owned()]);
         let request = request(endpoint);
-        let mut token = request.token.clone();
-        let result = converse(&request, &mut token, &AtomicBool::new(false), &|_| {});
+        let result = converse(&request, &AtomicBool::new(false), &|_| {});
         let Err(ChatError::Failed(detail)) = result else {
             panic!("{result:?}");
         };
@@ -863,8 +1009,7 @@ mod tests {
         let (endpoint, server) =
             fake_models(vec!["REDIRECT https://example.com/elsewhere".to_owned()]);
         let request = request(endpoint);
-        let mut token = request.token.clone();
-        let result = converse(&request, &mut token, &AtomicBool::new(false), &|_| {});
+        let result = converse(&request, &AtomicBool::new(false), &|_| {});
         assert_eq!(
             result,
             Err(ChatError::Failed(
@@ -881,8 +1026,7 @@ mod tests {
         let endpoint = format!("http://{}/chat", listener.local_addr().unwrap());
         drop(listener);
         let request = request(endpoint);
-        let mut token = request.token.clone();
-        let result = converse(&request, &mut token, &AtomicBool::new(false), &|_| {});
+        let result = converse(&request, &AtomicBool::new(false), &|_| {});
         assert!(
             matches!(&result, Err(ChatError::Network(reason)) if !reason.is_empty()),
             "{result:?}"
@@ -890,7 +1034,54 @@ mod tests {
     }
 
     #[test]
-    fn explains_errors_from_github_models() {
+    fn lists_chat_models_with_the_preferred_one_first() {
+        let models = json!({ "data": [
+            { "id": "models/gemini-2.5-pro" },
+            { "id": "models/gemini-2.5-flash-lite" },
+            { "id": "models/gemini-2.5-flash" },
+            { "id": "models/text-embedding-004" },
+            { "id": "models/imagen-4" },
+        ]});
+        let (base, server) = fake_models(vec![format!("JSON {models}")]);
+        let listed = list_models(Service::Gemini, &base, Some("key")).unwrap();
+        assert_eq!(
+            listed,
+            vec![
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-pro"
+            ]
+        );
+        let requests = server.join().unwrap();
+        assert!(requests[0].starts_with("GET /v1/models"), "{}", requests[0]);
+        assert!(requests[0]
+            .to_lowercase()
+            .contains("authorization: bearer key"));
+    }
+
+    #[test]
+    fn prefers_free_models_on_openrouter() {
+        let models: Vec<String> = ["a/big", "b/small:free", "c/other"]
+            .map(str::to_owned)
+            .to_vec();
+        assert_eq!(
+            preferred_model(Service::OpenRouter, &models),
+            Some("b/small:free")
+        );
+        assert_eq!(preferred_model(Service::Local, &models), Some("a/big"));
+    }
+
+    #[test]
+    fn services_and_addresses() {
+        assert!(!Service::Local.needs_key());
+        assert!(Service::Gemini.needs_key());
+        assert_eq!(url("http://x/v1/", "models"), "http://x/v1/models");
+        assert_eq!(url("http://x/v1", "models"), "http://x/v1/models");
+        assert_eq!(Service::from_id("openrouter"), Some(Service::OpenRouter));
+    }
+
+    #[test]
+    fn explains_errors_from_ai_services() {
         for (reply, expected) in [
             (
                 "HTTP 429 {\"error\":{\"code\":\"RateLimitReached\"}}",
@@ -902,11 +1093,11 @@ mod tests {
             ),
             (
                 "HTTP 403 {\"error\":{\"code\":\"no_access\"}}",
-                ChatError::NoAccess,
+                ChatError::InvalidKey,
             ),
             (
                 "HTTP 401 {\"message\":\"Bad credentials\"}",
-                ChatError::SignInNeeded,
+                ChatError::InvalidKey,
             ),
             (
                 "HTTP 400 {\"error\":{\"code\":\"unknown_model\"}}",
@@ -920,11 +1111,18 @@ mod tests {
                 "HTTP 500 oops",
                 ChatError::Failed("HTTP 500: oops".to_owned()),
             ),
+            (
+                "HTTP 400 [{\"error\":{\"code\":400,\"message\":\"API key not valid. Please pass a valid API key.\"}}]",
+                ChatError::InvalidKey,
+            ),
+            (
+                "HTTP 400 {\"error\":{\"message\":\"User location is not supported for the API use.\"}}",
+                ChatError::Failed("HTTP 400: User location is not supported for the API use.".to_owned()),
+            ),
         ] {
             let (endpoint, server) = fake_models(vec![reply.to_owned()]);
             let request = request(endpoint);
-            let mut token = request.token.clone();
-            let result = converse(&request, &mut token, &AtomicBool::new(false), &|_| {});
+                let result = converse(&request, &AtomicBool::new(false), &|_| {});
             assert_eq!(result, Err(expected), "{reply}");
             server.join().unwrap();
         }

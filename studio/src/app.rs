@@ -11,7 +11,7 @@ use eframe::egui::{
     RichText, ScrollArea, TextEdit, TextFormat, ViewportCommand,
 };
 
-use crate::assistant::{self, ChatError, Entry, Job};
+use crate::assistant::{ChatError, Entry, Job};
 use crate::auth::{self, Failure, Profile, Provider, SignIn};
 use crate::files::{self, Node};
 use crate::highlight::{self, DARK};
@@ -74,7 +74,7 @@ enum LineKind {
 enum AccountAction {
     SignIn(Provider),
     Cancel,
-    Finish(Profile, Option<auth::Token>),
+    Finish(Profile),
     SignOut,
 }
 
@@ -120,16 +120,15 @@ pub struct StudioApp {
     avatar: Option<egui::TextureHandle>,
     wake: Arc<dyn Fn() + Send + Sync>,
     // ----- assistant -----
-    /// The GitHub token for GitHub Models, if connected.
-    github_token: Option<auth::Token>,
+    /// The API key of the assistant's service, if it needs one.
+    api_key: Option<String>,
+    /// The service set-up form, while it is open.
+    setup: Option<assistant_panel::Setup>,
     chat: Vec<Entry>,
     chat_input: String,
     chat_job: Option<Job>,
     chat_error: Option<ChatError>,
     send_open_file: bool,
-    /// Connecting GitHub from the assistant panel.
-    assistant_sign_in: Option<SignIn>,
-    assistant_browser_opened: bool,
     /// New text for the open file, waiting for the user to approve it.
     replace_preview: Option<String>,
     /// The document and its text before the assistant last changed it.
@@ -178,20 +177,21 @@ impl StudioApp {
             avatar_image: Arc::new(Mutex::new(None)),
             avatar: None,
             wake: Arc::new(move || wake_context.request_repaint()),
-            github_token: crate::credentials::load(),
+            api_key: None,
+            setup: None,
             chat: Vec::new(),
             chat_input: String::new(),
             chat_job: None,
             chat_error: None,
             send_open_file: true,
-            assistant_sign_in: None,
-            assistant_browser_opened: false,
             replace_preview: None,
             undo: None,
             last_error: None,
             cursor_index: None,
         };
         app.load_avatar();
+        crate::credentials::forget_github_token();
+        app.api_key = crate::credentials::load_api_key(&app.settings.ai_service);
 
         // `earth-studio program.earth` may give a relative path.
         let start = start.map(|path| std::path::absolute(&path).unwrap_or(path));
@@ -257,10 +257,7 @@ impl StudioApp {
         context.request_repaint();
     }
 
-    fn finish_sign_in(&mut self, profile: Profile, token: Option<auth::Token>) {
-        if let Some(token) = token {
-            crate::credentials::save(&token);
-        }
+    fn finish_sign_in(&mut self, profile: Profile) {
         self.settings.profile = Some(profile);
         self.settings.save();
         self.sign_in = None;
@@ -268,7 +265,6 @@ impl StudioApp {
     }
 
     fn sign_out(&mut self) {
-        self.disconnect_github();
         self.settings.profile = None;
         self.settings.save();
         self.avatar = None;
@@ -1147,8 +1143,8 @@ impl StudioApp {
                             }
                         });
                     }
-                    Some(auth::State::Done(profile, token)) => {
-                        action = Some(AccountAction::Finish(profile, token));
+                    Some(auth::State::Done(profile)) => {
+                        action = Some(AccountAction::Finish(profile));
                     }
                     Some(auth::State::Failed(failure)) => {
                         let message = match failure {
@@ -1168,7 +1164,7 @@ impl StudioApp {
         match action {
             Some(AccountAction::SignIn(provider)) => self.start_sign_in(context, provider),
             Some(AccountAction::Cancel) => self.sign_in = None,
-            Some(AccountAction::Finish(profile, token)) => self.finish_sign_in(profile, token),
+            Some(AccountAction::Finish(profile)) => self.finish_sign_in(profile),
             Some(AccountAction::SignOut) => self.sign_out(),
             None => {}
         }
@@ -1185,7 +1181,8 @@ impl StudioApp {
         let texts = self.texts();
         let before = self.settings.clone();
         let mut open = true;
-        let mut disconnect = false;
+        let mut forget_key = false;
+        let mut open_setup = false;
         egui::Window::new(texts.settings_title)
             .open(&mut open)
             .collapsible(false)
@@ -1215,25 +1212,23 @@ impl StudioApp {
                     });
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    ui.label(texts.assistant_model);
-                    let current = assistant::MODELS
-                        .iter()
-                        .find(|(id, _)| *id == self.settings.assistant_model)
-                        .map_or(self.settings.assistant_model.as_str(), |(_, name)| name);
-                    egui::ComboBox::from_id_salt("assistant_model")
-                        .selected_text(current)
-                        .show_ui(ui, |ui| {
-                            for (id, name) in assistant::MODELS {
-                                ui.selectable_value(
-                                    &mut self.settings.assistant_model,
-                                    (*id).to_owned(),
-                                    *name,
-                                );
-                            }
-                        });
+                    ui.label(texts.assistant_settings_label);
+                    let current = if self.assistant_ready() {
+                        format!(
+                            "{} · {}",
+                            assistant_panel::service_name(self.settings.ai_service.as_str(), texts),
+                            self.settings.ai_model
+                        )
+                    } else {
+                        texts.assistant_not_set.to_owned()
+                    };
+                    ui.label(RichText::new(current).weak());
+                    if ui.small_button(texts.assistant_change).clicked() {
+                        open_setup = true;
+                    }
                 });
-                if self.github_token.is_some() && ui.button(texts.assistant_disconnect).clicked() {
-                    disconnect = true;
+                if self.api_key.is_some() && ui.button(texts.assistant_forget_key).clicked() {
+                    forget_key = true;
                 }
                 ui.add_space(4.0);
                 ui.checkbox(&mut self.settings.auto_update, texts.settings_auto_update);
@@ -1248,8 +1243,12 @@ impl StudioApp {
         if self.settings != before {
             self.settings.save();
         }
-        if disconnect {
-            self.disconnect_github();
+        if forget_key {
+            self.forget_api_key();
+        }
+        if open_setup {
+            self.open_setup();
+            self.show_settings = false;
         }
         if !open {
             self.show_settings = false;

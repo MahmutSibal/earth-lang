@@ -1,20 +1,19 @@
-//! The Earth Assistant panel on the right: connecting GitHub, the chat,
-//! and applying code from answers to the editor.
+//! The Earth Assistant panel on the right: setting up the AI service, the
+//! chat, and applying code from answers to the editor.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use eframe::egui::{
     self, Align, Color32, FontId, Key, Layout, Modifiers, RichText, ScrollArea, TextEdit,
 };
 
 use super::{Document, StudioApp};
-use crate::assistant::{self, ChatError, Check, Entry, Job, OpenFile, Part, Phase, Request};
-use crate::auth::{self, Failure, Provider, SignIn};
+use crate::assistant::{
+    self, ChatError, Check, Entry, Job, OpenFile, Part, Phase, Request, Service,
+};
 use crate::credentials;
 use crate::highlight::{self, DARK};
-
-/// Points the assistant at another server, for tests.
-const URL_VARIABLE: &str = "EARTH_STUDIO_MODELS_URL";
+use crate::texts::Texts;
 
 const GREEN: Color32 = Color32::from_rgb(0x89, 0xd1, 0x85);
 const RED: Color32 = Color32::from_rgb(0xf4, 0x87, 0x71);
@@ -28,15 +27,107 @@ enum CodeAction {
     NewFile(String),
 }
 
+type Listing = Arc<Mutex<Option<Result<Vec<String>, ChatError>>>>;
+
+/// The form for choosing the AI service, its key and model.
+pub(super) struct Setup {
+    service: Service,
+    base_url: String,
+    key: String,
+    models: Vec<String>,
+    model: String,
+    listing: Option<Listing>,
+    error: Option<ChatError>,
+}
+
+impl Setup {
+    fn new(service: Service, base_url: &str, key: Option<&str>, model: &str) -> Self {
+        let mut setup = Self {
+            service,
+            base_url: String::new(),
+            key: key.unwrap_or_default().to_owned(),
+            models: Vec::new(),
+            model: model.to_owned(),
+            listing: None,
+            error: None,
+        };
+        setup.choose(service);
+        if !base_url.is_empty() {
+            setup.base_url = base_url.to_owned();
+        }
+        if !model.is_empty() {
+            setup.models = vec![model.to_owned()];
+        }
+        setup
+    }
+
+    fn choose(&mut self, service: Service) {
+        if service != self.service || self.base_url.is_empty() {
+            self.base_url = service.base_url().unwrap_or_default().to_owned();
+        }
+        if service != self.service {
+            self.key.clear();
+            self.models.clear();
+            self.model.clear();
+            self.error = None;
+        }
+        self.service = service;
+    }
+}
+
+/// The name of a service, as the settings store it.
+pub(super) fn service_name(id: &str, texts: &Texts) -> &'static str {
+    match Service::from_id(id) {
+        Some(Service::Gemini) => "Google Gemini",
+        Some(Service::OpenRouter) => "OpenRouter",
+        Some(Service::OpenAI) => "OpenAI",
+        Some(Service::Local) => texts.assistant_local_name,
+        Some(Service::Custom) => texts.assistant_custom_name,
+        None => texts.assistant_not_set,
+    }
+}
+
 impl StudioApp {
     pub(super) fn toggle_assistant(&mut self) {
         self.settings.assistant_open = !self.settings.assistant_open;
         self.settings.save();
     }
 
-    pub(super) fn disconnect_github(&mut self) {
-        credentials::delete();
-        self.github_token = None;
+    /// The service, address, key and model are all set.
+    pub(super) fn assistant_ready(&self) -> bool {
+        Service::from_id(&self.settings.ai_service).is_some_and(|service| {
+            !self.settings.ai_model.is_empty()
+                && !self.base_url().is_empty()
+                && (!service.needs_key() || self.api_key.is_some())
+        })
+    }
+
+    fn base_url(&self) -> String {
+        if !self.settings.ai_base_url.is_empty() {
+            return self.settings.ai_base_url.clone();
+        }
+        Service::from_id(&self.settings.ai_service)
+            .and_then(Service::base_url)
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    pub(super) fn open_setup(&mut self) {
+        if !self.settings.assistant_open {
+            self.toggle_assistant();
+        }
+        let service = Service::from_id(&self.settings.ai_service).unwrap_or(Service::Gemini);
+        self.setup = Some(Setup::new(
+            service,
+            &self.settings.ai_base_url,
+            self.api_key.as_deref(),
+            &self.settings.ai_model,
+        ));
+    }
+
+    pub(super) fn forget_api_key(&mut self) {
+        credentials::delete_api_key(&self.settings.ai_service);
+        self.api_key = None;
         self.chat_job = None;
     }
 
@@ -45,7 +136,7 @@ impl StudioApp {
         if !self.settings.assistant_open {
             self.toggle_assistant();
         }
-        if self.github_token.is_some() && self.chat_job.is_none() {
+        if self.assistant_ready() && self.chat_job.is_none() {
             self.send_open_file = true;
             let prompt = self
                 .texts()
@@ -56,10 +147,7 @@ impl StudioApp {
     }
 
     fn send_chat(&mut self, text: String) {
-        let Some(token) = self.github_token.clone() else {
-            return;
-        };
-        if self.chat_job.is_some() || text.trim().is_empty() {
+        if !self.assistant_ready() || self.chat_job.is_some() || text.trim().is_empty() {
             return;
         }
         self.chat.push(Entry::user(text.trim().to_owned()));
@@ -73,10 +161,9 @@ impl StudioApp {
         self.chat_error = None;
         self.chat_job = Some(Job::start(
             Request {
-                endpoint: std::env::var(URL_VARIABLE)
-                    .unwrap_or_else(|_| assistant::ENDPOINT.to_owned()),
-                token,
-                model: self.settings.assistant_model.clone(),
+                base_url: self.base_url(),
+                api_key: self.api_key.clone(),
+                model: self.settings.ai_model.clone(),
                 system,
                 history: self.chat.clone(),
             },
@@ -84,69 +171,78 @@ impl StudioApp {
         ));
     }
 
-    /// Picks up finished answers and GitHub connections.
+    /// Picks up finished answers and model lists.
     pub(super) fn poll_assistant(&mut self) {
         if let Some(job) = &self.chat_job {
-            if let Some(token) = job.take_refreshed_token() {
-                credentials::save(&token);
-                self.github_token = Some(token);
-            }
             if let Some(result) = job.take_result() {
                 self.chat_job = None;
                 match result {
                     Ok(entry) => self.chat.push(entry),
                     Err(ChatError::Cancelled) => {}
-                    Err(error) => {
-                        if error == ChatError::SignInNeeded {
-                            self.disconnect_github();
-                        }
-                        self.chat_error = Some(error);
-                    }
+                    Err(error) => self.chat_error = Some(error),
                 }
             }
         }
-
-        let state = self.assistant_sign_in.as_ref().map(SignIn::state);
-        if let Some(auth::State::Done(profile, token)) = state {
-            self.assistant_sign_in = None;
-            if let Some(token) = token {
-                credentials::save(&token);
-                self.github_token = Some(token);
-                self.chat_error = None;
-            }
-            // Connecting GitHub also signs in, unless already signed in.
-            if self.settings.profile.is_none() {
-                self.settings.profile = Some(profile);
-                self.settings.save();
-                self.load_avatar();
+        if let Some(setup) = &mut self.setup {
+            let result = setup
+                .listing
+                .as_ref()
+                .and_then(|listing| listing.lock().ok()?.take());
+            if let Some(result) = result {
+                setup.listing = None;
+                match result {
+                    Ok(models) if models.is_empty() => {
+                        setup.error = Some(ChatError::Failed(String::new()));
+                        setup.models.clear();
+                    }
+                    Ok(models) => {
+                        setup.model = models[0].clone();
+                        setup.models = models;
+                        setup.error = None;
+                    }
+                    Err(error) => setup.error = Some(error),
+                }
             }
         }
     }
 
     pub(super) fn assistant_panel(&mut self, ui: &mut egui::Ui) {
         let texts = self.texts();
+        let ready = self.assistant_ready();
         ui.horizontal(|ui| {
             ui.label(RichText::new(texts.assistant_title).small().strong());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.small_button("×").clicked() {
                     self.toggle_assistant();
                 }
-                if self.github_token.is_some()
-                    && ui.small_button(texts.assistant_new_chat).clicked()
-                {
-                    self.chat_job = None;
-                    self.chat.clear();
-                    self.chat_error = None;
+            });
+        });
+        if (ready && self.setup.is_none()) || self.undo.is_some() {
+            ui.horizontal_wrapped(|ui| {
+                if ready && self.setup.is_none() {
+                    if ui.small_button(texts.assistant_new_chat).clicked() {
+                        self.chat_job = None;
+                        self.chat.clear();
+                        self.chat_error = None;
+                    }
+                    if ui.small_button(texts.assistant_service_button).clicked() {
+                        self.open_setup();
+                    }
                 }
                 if self.undo.is_some() && ui.small_button(texts.assistant_undo).clicked() {
                     self.undo_assistant_change();
                 }
             });
-        });
+        }
         ui.separator();
 
-        if self.github_token.is_none() {
-            self.connect_view(ui);
+        if !ready && self.setup.is_none() {
+            self.open_setup();
+        }
+        if self.setup.is_some() {
+            ScrollArea::vertical()
+                .id_salt("assistant_setup")
+                .show(ui, |ui| self.setup_view(ui));
             return;
         }
 
@@ -158,78 +254,149 @@ impl StudioApp {
             .show(ui, |ui| self.chat_view(ui));
     }
 
-    fn connect_view(&mut self, ui: &mut egui::Ui) {
+    fn setup_view(&mut self, ui: &mut egui::Ui) {
         let texts = self.texts();
+        let ready = self.assistant_ready();
+        let wake = Arc::clone(&self.wake);
+        let Some(setup) = &mut self.setup else {
+            return;
+        };
         ui.label(texts.assistant_intro);
-        ui.add_space(6.0);
-        if let Some(error) = &self.chat_error {
-            error_view(ui, texts, error);
-            ui.add_space(6.0);
-        }
-        match self.assistant_sign_in.as_ref().map(SignIn::state) {
-            None | Some(auth::State::Done(..)) => {
-                ui.label(RichText::new(texts.assistant_connect_note).small().weak());
-                ui.add_space(4.0);
-                if ui
-                    .add(
-                        egui::Button::new(texts.assistant_connect)
-                            .min_size(egui::vec2(200.0, 30.0)),
-                    )
-                    .clicked()
-                {
-                    self.assistant_sign_in =
-                        Some(SignIn::start(Provider::GitHub, Arc::clone(&self.wake)));
-                    self.assistant_browser_opened = false;
-                }
+        ui.add_space(8.0);
+        ui.label(RichText::new(texts.assistant_setup_title).strong());
+        for service in Service::ALL {
+            let name = service_name(service.id(), texts);
+            if ui.radio(setup.service == service, name).clicked() {
+                setup.choose(service);
             }
-            Some(auth::State::Starting | auth::State::InBrowser { .. }) => {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(texts.waiting);
-                });
-            }
-            Some(auth::State::DeviceCode { user_code, url }) => {
-                if !self.assistant_browser_opened {
-                    self.assistant_browser_opened = true;
-                    ui.ctx().copy_text(user_code.clone());
-                    ui.ctx().open_url(egui::OpenUrl::new_tab(&url));
-                }
-                ui.label(texts.device_code_intro);
-                ui.label(
-                    RichText::new(&user_code)
-                        .monospace()
-                        .size(26.0)
-                        .strong()
-                        .color(GREEN),
-                );
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(RichText::new(texts.waiting).small());
-                });
-                ui.horizontal(|ui| {
-                    if ui.button(texts.copy_code).clicked() {
-                        ui.ctx().copy_text(user_code.clone());
-                    }
-                    if ui.button(texts.open_page).clicked() {
-                        ui.ctx().open_url(egui::OpenUrl::new_tab(&url));
-                    }
-                    if ui.button(texts.cancel).clicked() {
-                        self.assistant_sign_in = None;
-                    }
-                });
-            }
-            Some(auth::State::Failed(failure)) => {
-                let message = match failure {
-                    Failure::Denied => texts.failure_denied,
-                    Failure::TimedOut => texts.failure_timed_out,
-                    Failure::Network => texts.failure_network,
-                    Failure::DeviceFlowDisabled => texts.failure_device_flow,
+            if setup.service == service {
+                let note = match service {
+                    Service::Gemini => texts.assistant_gemini_note,
+                    Service::OpenRouter => texts.assistant_openrouter_note,
+                    Service::OpenAI => texts.assistant_openai_note,
+                    Service::Local => texts.assistant_local_note,
+                    Service::Custom => texts.assistant_custom_note,
                 };
-                ui.label(RichText::new(message).color(RED));
-                if ui.button(texts.cancel).clicked() {
-                    self.assistant_sign_in = None;
-                }
+                ui.indent(service.id(), |ui| {
+                    ui.label(RichText::new(note).small().weak());
+                });
             }
+        }
+        ui.add_space(8.0);
+
+        if matches!(setup.service, Service::Local | Service::Custom) {
+            ui.label(texts.assistant_address);
+            ui.add(
+                TextEdit::singleline(&mut setup.base_url)
+                    .hint_text("http://localhost:11434/v1/")
+                    .desired_width(f32::INFINITY),
+            );
+        }
+        if setup.service != Service::Local {
+            ui.horizontal(|ui| {
+                ui.label(texts.assistant_key);
+                if let Some(page) = setup.service.key_page() {
+                    ui.hyperlink_to(texts.assistant_get_key, page);
+                }
+            });
+            ui.add(
+                TextEdit::singleline(&mut setup.key)
+                    .password(true)
+                    .desired_width(f32::INFINITY),
+            );
+            ui.label(RichText::new(texts.assistant_key_note).small().weak());
+        }
+        ui.add_space(6.0);
+
+        let can_list = !setup.base_url.trim().is_empty()
+            && (!setup.service.needs_key() || !setup.key.trim().is_empty());
+        ui.horizontal(|ui| {
+            if setup.listing.is_some() {
+                ui.spinner();
+                ui.label(texts.assistant_listing);
+            } else if ui
+                .add_enabled(can_list, egui::Button::new(texts.assistant_connect))
+                .clicked()
+            {
+                let listing: Listing = Arc::new(Mutex::new(None));
+                let target = Arc::clone(&listing);
+                let (service, base_url) = (setup.service, setup.base_url.trim().to_owned());
+                let key = Some(setup.key.trim().to_owned()).filter(|key| !key.is_empty());
+                let _ = std::thread::Builder::new()
+                    .name("earth-models".to_owned())
+                    .spawn(move || {
+                        let result = assistant::list_models(service, &base_url, key.as_deref());
+                        if let Ok(mut slot) = target.lock() {
+                            *slot = Some(result);
+                        }
+                        wake();
+                    });
+                setup.listing = Some(listing);
+                setup.error = None;
+            }
+        });
+        if let Some(error) = &setup.error {
+            if *error == ChatError::Failed(String::new()) {
+                ui.label(RichText::new(texts.assistant_no_models).color(RED));
+            } else {
+                error_view(ui, texts, error);
+            }
+        }
+
+        let mut save = false;
+        let mut cancel = false;
+        if !setup.models.is_empty() {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(texts.assistant_model);
+                egui::ComboBox::from_id_salt("assistant_model")
+                    .selected_text(setup.model.as_str())
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for model in &setup.models {
+                            ui.selectable_value(&mut setup.model, model.clone(), model);
+                        }
+                    });
+            });
+        }
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            save = ui
+                .add_enabled(
+                    !setup.model.is_empty() && can_list,
+                    egui::Button::new(RichText::new(texts.assistant_save).color(GREEN)),
+                )
+                .clicked();
+            if ready {
+                cancel = ui.button(texts.cancel).clicked();
+            }
+        });
+
+        if save {
+            let Some(setup) = self.setup.take() else {
+                return;
+            };
+            let id = setup.service.id().to_owned();
+            let key = setup.key.trim().to_owned();
+            if key.is_empty() {
+                credentials::delete_api_key(&id);
+                self.api_key = None;
+            } else {
+                credentials::save_api_key(&id, &key);
+                self.api_key = Some(key);
+            }
+            let default_url = setup.service.base_url().unwrap_or_default();
+            self.settings.ai_base_url = if setup.base_url.trim() == default_url {
+                String::new()
+            } else {
+                setup.base_url.trim().to_owned()
+            };
+            self.settings.ai_service = id;
+            self.settings.ai_model = setup.model;
+            self.settings.save();
+            self.chat_error = None;
+        } else if cancel {
+            self.setup = None;
         }
     }
 
@@ -469,7 +636,7 @@ fn show_answer(
     font_size: f32,
     index: usize,
     mut actions: Option<&mut Vec<CodeAction>>,
-    texts: &crate::texts::Texts,
+    texts: &Texts,
 ) {
     for (part_index, part) in assistant::parts(text).into_iter().enumerate() {
         match part {
@@ -572,7 +739,7 @@ fn prose(text: &str, size: f32) -> egui::text::LayoutJob {
 
 /// The error message, with the details GitHub or the system gave, which
 /// can be selected and copied when reporting a problem.
-fn error_view(ui: &mut egui::Ui, texts: &crate::texts::Texts, error: &ChatError) {
+fn error_view(ui: &mut egui::Ui, texts: &Texts, error: &ChatError) {
     ui.label(RichText::new(error_text(texts, error)).color(RED));
     if let ChatError::Network(detail) | ChatError::Failed(detail) = error {
         ui.add(
@@ -587,10 +754,9 @@ fn error_view(ui: &mut egui::Ui, texts: &crate::texts::Texts, error: &ChatError)
     }
 }
 
-fn error_text(texts: &crate::texts::Texts, error: &ChatError) -> &'static str {
+fn error_text(texts: &Texts, error: &ChatError) -> &'static str {
     match error {
-        ChatError::SignInNeeded => texts.assistant_sign_in_needed,
-        ChatError::NoAccess => texts.assistant_no_access,
+        ChatError::InvalidKey => texts.assistant_invalid_key,
         ChatError::RateLimited => texts.assistant_rate_limited,
         ChatError::TooLong => texts.assistant_too_long,
         ChatError::UnknownModel => texts.assistant_unknown_model,
