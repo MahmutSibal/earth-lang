@@ -52,6 +52,7 @@ fib(20) = 6765
 - [Neden Earth?](#neden-earth)
 - [Hızlı başlangıç](#hızlı-başlangıç)
 - [Earth Studio](#earth-studio)
+  - [Hesap ve ayarlar](#hesap-ve-ayarlar)
 - [Komut satırı: `earth`](#komut-satırı-earth)
 - [Dil öğreticisi](#dil-öğreticisi)
   - [İlk program](#1-ilk-program) ·
@@ -128,7 +129,8 @@ fib(20) = 6765
 | **Araç çubuğu** (üst) | 📂 Klasör Aç, 📚 Örnekler, 📄 Yeni, 💾 Kaydet, ▶ Çalıştır, ⏹ Durdur ve arayüz dili (Türkçe/English). |
 | **Gezgin** (sol) | Açık klasördeki dosyalar. Bir dosyaya tıklamak onu yeni bir sekmede açar. **+ Dosya** klasörde yeni bir `.earth` dosyası oluşturur, **⟳** listeyi yeniler. |
 | **Editör** (orta) | Sekmeli kod editörü: satır numaraları ve renklendirme. Kaydedilmemiş dosyanın sekmesinde `•` görünür. Hata veren satır kırmızıyla işaretlenir. |
-| **Terminal** (alt) | Programın çıktısı burada akar. Program `girdi` ile bir şey sorduğunda cevabı alttaki satıra yazarsın. Program çalışmıyorken aynı satır bir Earth komut satırıdır (REPL). Kenarından sürükleyerek büyütülebilir. |
+| **Hesap ve ayarlar** (sol alt köşe) | **👤 Giriş yap** ile Google ya da GitHub hesabınla giriş, **⚙** ile ayarlar. Ayrıntılar: [Hesap ve ayarlar](#hesap-ve-ayarlar). |
+| **Terminal** (editörün altı) | Programın çıktısı burada akar. Program `girdi` ile bir şey sorduğunda cevabı alttaki satıra yazarsın. Program çalışmıyorken aynı satır bir Earth komut satırıdır (REPL). Kenarından sürükleyerek büyütülebilir. |
 | **Durum çubuğu** (en alt) | Solda toplam indirme sayısı ve programın durumu (Hazır, Çalışıyor…, Girdi bekleniyor); sağda imlecin satır ve sütunu, dosyanın algılanan dili ve Studio'nun sürümü. |
 
 ### Klavye kısayolları
@@ -193,10 +195,34 @@ olup olmadığına bakar. Yeni sürüm varsa:
 3. Şeride dokunmazsan güncelleme Studio kapatılırken sessizce kurulur; bir
    sonraki açılışta yeni sürüm çalışır.
 
-Durum çubuğundaki sürüm numarasına (`v0.7.0` gibi) tıklamak hemen denetler.
+Durum çubuğundaki sürüm numarasına (`v0.8.0` gibi) tıklamak hemen denetler.
 Sol alt köşedeki **⬇ … kişi indirdi** sayacı, kurulum dosyasının GitHub'dan
 toplam indirilme sayısıdır. Studio senin hakkında hiçbir bilgi göndermez;
 yalnızca herkese açık sürüm bilgisini okur.
+
+### Hesap ve ayarlar
+
+Sol alt köşede iki düğme var:
+
+- **👤 Giriş yap**: Google ya da GitHub hesabınla giriş yaparsın. Giriş
+  isteğe bağlıdır; Studio girişsiz de tamamen çalışır.
+  - **Google**: tarayıcında Google'ın kendi giriş sayfası açılır. Hesabını
+    seçince Studio'ya dönersin.
+  - **GitHub**: Studio kısa bir kod gösterir ve panoya kopyalar. Açılan
+    `github.com/login/device` sayfasına bu kodu girip onaylarsın.
+
+  Giriş yapınca köşede profil resmin ve adın görünür. Studio yalnızca adını,
+  e-posta adresini ya da GitHub kullanıcı adını ve profil resmini okur.
+  Şifren Studio'ya hiç gelmez ve hiçbir erişim anahtarı saklanmaz. Bu
+  bilgiler yalnızca bu bilgisayarda tutulur; **Çıkış yap** onları siler.
+- **⚙ Ayarlar**:
+  - **Arayüz dili**: Türkçe ya da English.
+  - **Editör yazı boyutu**: 11–24.
+  - **Güncellemeleri otomatik indir ve kur**: Studio yeniden açılınca
+    geçerli olur.
+
+Ayarlar `%APPDATA%\Earth Studio\settings.json` dosyasında saklanır (Linux'ta
+`~/.config/earth-studio`, macOS'ta `~/Library/Application Support/Earth Studio`).
 
 ## Komut satırı: `earth`
 
@@ -213,7 +239,7 @@ gelir) her yeni Komut İstemi ya da PowerShell penceresinde kullanılabilir:
 
 ```text
 C:\Users\sen> earth
-Earth 0.7.0 — çıkmak için 'çık' yazın
+Earth 0.8.0 — çıkmak için 'çık' yazın
 earth> değişken fiyat = 120
 earth> fiyat * 1.2
 144
@@ -973,7 +999,9 @@ sorun olursa ekran kartı sürücülerini güncelle ya da
 `EARTH_STUDIO_RENDERER=glow` ortam değişkenini tanımla.
 
 **Studio benim hakkımda bilgi gönderiyor mu?** Hayır. Yalnızca GitHub'daki
-herkese açık sürüm bilgisini ve indirme sayısını okur.
+herkese açık sürüm bilgisini ve indirme sayısını okur. Giriş yaparsan
+profil bilgilerin sadece bu bilgisayarda saklanır; hiçbir sunucuya
+gönderilmez.
 
 **Bir hata buldum ya da önerim var.**
 [Issues](https://github.com/MahmutSibal/earth-lang/issues) sayfasından
