@@ -101,7 +101,7 @@ try {
     $language = if ($Turkish) { "turkish" } else { "english" }
     $process = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList @(
         "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER",
-        "/TASKS=desktopicon", "/LANG=$language"
+        "/TASKS=desktopicon,associate,addtopath", "/LANG=$language"
     )
     if ($process.ExitCode -ne 0) {
         Fail "Kurulum başarısız oldu (çıkış kodu $($process.ExitCode))." "Setup failed (exit code $($process.ExitCode))."
