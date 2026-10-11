@@ -23,6 +23,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
       - run: cargo build --release --workspace
+        env:
+          # Google sign-in; see studio/src/auth.rs. Without it Studio builds
+          # with Google sign-in turned off.
+          EARTH_GOOGLE_CLIENT_SECRET: ${{ secrets.EARTH_GOOGLE_CLIENT_SECRET }}
 
       - name: Sign earth-studio.exe
         if: env.CAN_SIGN == 'true'
@@ -85,6 +89,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
       - run: cargo build --release --workspace
+        env:
+          # Google sign-in; see studio/src/auth.rs. Without it Studio builds
+          # with Google sign-in turned off.
+          EARTH_GOOGLE_CLIENT_SECRET: ${{ secrets.EARTH_GOOGLE_CLIENT_SECRET }}
       - run: |
           mkdir earth-studio
           cp target/release/earth-studio target/release/earth README.md LICENSE earth-studio/

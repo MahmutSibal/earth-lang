@@ -8,9 +8,11 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
 mod app;
+mod auth;
 mod files;
 mod highlight;
 mod runner;
+mod settings;
 mod texts;
 mod update;
 mod workspace;

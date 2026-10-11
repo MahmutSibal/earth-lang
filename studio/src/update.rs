@@ -69,9 +69,10 @@ pub struct Updater {
 
 impl Updater {
     /// Starts checking in the background. `wake` repaints the window when
-    /// something changes.
-    pub fn start(wake: impl Fn() + Send + Sync + 'static) -> Self {
-        let disabled = std::env::var(DISABLE_VARIABLE).is_ok_and(|value| value == "1");
+    /// something changes. With `enabled` false (a setting) only the
+    /// download count is read.
+    pub fn start(enabled: bool, wake: impl Fn() + Send + Sync + 'static) -> Self {
+        let disabled = !enabled || std::env::var(DISABLE_VARIABLE).is_ok_and(|value| value == "1");
         let shared = Arc::new(Mutex::new(Shared {
             status: if disabled {
                 Status::Disabled
@@ -213,7 +214,7 @@ impl Source {
     }
 }
 
-fn agent(max_redirects: u32) -> ureq::Agent {
+pub fn agent(max_redirects: u32) -> ureq::Agent {
     ureq::Agent::config_builder()
         .max_redirects(max_redirects)
         .http_status_as_error(false)

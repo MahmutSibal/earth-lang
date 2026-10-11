@@ -832,14 +832,16 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "earth"
-version = "0.7.0"
+version = "0.8.0"
 
 [[package]]
 name = "earth-studio"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "earth",
  "eframe",
+ "getrandom 0.3.4",
+ "image",
  "rfd",
  "serde_json",
  "sha2",
@@ -1611,6 +1613,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

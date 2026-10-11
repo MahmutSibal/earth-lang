@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use earth::Lang;
 use eframe::egui::{
@@ -10,16 +11,17 @@ use eframe::egui::{
     RichText, ScrollArea, TextEdit, TextFormat, ViewportCommand,
 };
 
+use crate::auth::{self, Failure, Profile, Provider, SignIn};
 use crate::files::{self, Node};
 use crate::highlight::{self, DARK};
 use crate::runner::{Event, Runner};
+use crate::settings::{self, Settings};
 use crate::texts::{texts, Texts};
 use crate::update::{self, Status, Updater};
 use crate::workspace;
 
 /// Older terminal output is dropped beyond this many characters.
 const TERMINAL_LIMIT: usize = 200_000;
-const EDITOR_FONT_SIZE: f32 = 15.0;
 
 const RUN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
 const STOP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::F5);
@@ -65,13 +67,20 @@ enum LineKind {
     Echo,
 }
 
+enum AccountAction {
+    SignIn(Provider),
+    Cancel,
+    Finish(Profile),
+    SignOut,
+}
+
 enum Confirm {
     Quit,
     CloseTab(usize),
 }
 
 pub struct StudioApp {
-    lang: Lang,
+    settings: Settings,
     folder: Option<PathBuf>,
     tree: Vec<Node>,
     documents: Vec<Document>,
@@ -97,6 +106,15 @@ pub struct StudioApp {
     update_banner_hidden: bool,
     /// Install the update and reopen Studio once the window has closed.
     relaunch_for_update: bool,
+    show_settings: bool,
+    show_account: bool,
+    sign_in: Option<SignIn>,
+    /// The sign-in page has been opened in the browser.
+    browser_opened: bool,
+    /// A downloaded profile picture, waiting to become `avatar`.
+    avatar_image: Arc<Mutex<Option<egui::ColorImage>>>,
+    avatar: Option<egui::TextureHandle>,
+    wake: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl StudioApp {
@@ -104,9 +122,12 @@ impl StudioApp {
         let egui_context = context.egui_ctx.clone();
         let update_context = context.egui_ctx.clone();
         configure_style(&egui_context);
-        let lang = Lang::Tr;
+        let settings = Settings::load();
+        let lang = settings.lang;
+        let auto_update = settings.auto_update;
+        let wake_context = context.egui_ctx.clone();
         let mut app = Self {
-            lang,
+            settings,
             folder: None,
             tree: Vec::new(),
             documents: Vec::new(),
@@ -124,10 +145,18 @@ impl StudioApp {
             allow_close: false,
             cursor: (1, 1),
             logo: load_logo(&context.egui_ctx),
-            updater: Updater::start(move || update_context.request_repaint()),
+            updater: Updater::start(auto_update, move || update_context.request_repaint()),
             update_banner_hidden: false,
             relaunch_for_update: false,
+            show_settings: false,
+            show_account: false,
+            sign_in: None,
+            browser_opened: false,
+            avatar_image: Arc::new(Mutex::new(None)),
+            avatar: None,
+            wake: Arc::new(move || wake_context.request_repaint()),
         };
+        app.load_avatar();
 
         // `earth-studio program.earth` may give a relative path.
         let start = start.map(|path| std::path::absolute(&path).unwrap_or(path));
@@ -160,7 +189,53 @@ impl StudioApp {
     }
 
     fn texts(&self) -> &'static Texts {
-        texts(self.lang)
+        texts(self.settings.lang)
+    }
+
+    // ----- account -----
+
+    /// Downloads the signed-in user's picture in the background.
+    fn load_avatar(&mut self) {
+        self.avatar = None;
+        let Some(url) = self.settings.profile.as_ref().map(|p| p.avatar_url.clone()) else {
+            return;
+        };
+        let target = Arc::clone(&self.avatar_image);
+        let wake = Arc::clone(&self.wake);
+        let _ = std::thread::Builder::new()
+            .name("earth-avatar".to_owned())
+            .spawn(move || {
+                if let Some(image) = auth::fetch_avatar(&url) {
+                    if let Ok(mut slot) = target.lock() {
+                        *slot = Some(image);
+                    }
+                    wake();
+                }
+            });
+    }
+
+    fn start_sign_in(&mut self, context: &egui::Context, provider: Provider) {
+        self.sign_in = Some(SignIn::start(provider, Arc::clone(&self.wake)));
+        self.browser_opened = false;
+        // The browser opens once the sign-in knows its address; see
+        // `account_window`.
+        context.request_repaint();
+    }
+
+    fn finish_sign_in(&mut self, profile: Profile) {
+        self.settings.profile = Some(profile);
+        self.settings.save();
+        self.sign_in = None;
+        self.load_avatar();
+    }
+
+    fn sign_out(&mut self) {
+        self.settings.profile = None;
+        self.settings.save();
+        self.avatar = None;
+        if let Ok(mut slot) = self.avatar_image.lock() {
+            *slot = None;
+        }
     }
 
     // ----- files -----
@@ -358,7 +433,7 @@ impl StudioApp {
         } else if !line.trim().is_empty() {
             self.write_terminal(format!("› {line}\n"), LineKind::Echo);
             self.running_program = false;
-            self.runner.repl(line, self.lang);
+            self.runner.repl(line, self.settings.lang);
         }
         self.focus_terminal = true;
     }
@@ -497,12 +572,13 @@ impl StudioApp {
             }
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let other = match self.lang {
+                let other = match self.settings.lang {
                     Lang::Tr => (Lang::En, "English"),
                     Lang::En => (Lang::Tr, "Türkçe"),
                 };
                 if ui.button(format!("🌐 {}", other.1)).clicked() {
-                    self.lang = other.0;
+                    self.settings.lang = other.0;
+                    self.settings.save();
                 }
             });
         });
@@ -601,7 +677,7 @@ impl StudioApp {
     }
 
     fn editor(&mut self, ui: &mut egui::Ui) {
-        let font = FontId::monospace(EDITOR_FONT_SIZE);
+        let font = FontId::monospace(self.settings.font_size);
         let document = &mut self.documents[self.active];
         let error_line = document.error_line;
         let line_count = document.text.split('\n').count();
@@ -660,7 +736,7 @@ impl StudioApp {
         });
         ui.separator();
 
-        let font = FontId::monospace(EDITOR_FONT_SIZE - 1.0);
+        let font = FontId::monospace(self.settings.font_size - 1.0);
         let input_height = 36.0;
         ScrollArea::vertical()
             .id_salt("terminal")
@@ -729,7 +805,11 @@ impl StudioApp {
                 texts.ready
             };
             if let Some(downloads) = self.updater.downloads() {
-                let separator = if self.lang == Lang::Tr { '.' } else { ',' };
+                let separator = if self.settings.lang == Lang::Tr {
+                    '.'
+                } else {
+                    ','
+                };
                 let text = texts
                     .downloads
                     .replace("{count}", &update::group_digits(downloads, separator));
@@ -818,6 +898,281 @@ impl StudioApp {
             }
             _ => {}
         });
+    }
+
+    /// The bottom-left corner: the signed-in user (or "Sign in") and the
+    /// settings button.
+    fn account_bar(&mut self, ui: &mut egui::Ui) {
+        let texts = self.texts();
+        if let Some(image) = self
+            .avatar_image
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take())
+        {
+            self.avatar = Some(ui.ctx().load_texture(
+                "avatar",
+                image,
+                egui::TextureOptions::LINEAR,
+            ));
+        }
+        ui.horizontal(|ui| {
+            let account = match &self.settings.profile {
+                Some(profile) => {
+                    self.avatar_or_initial(ui, 22.0);
+                    ui.add(
+                        egui::Button::new(RichText::new(&profile.name).strong())
+                            .frame(false)
+                            .truncate(),
+                    )
+                }
+                None => ui.add(egui::Button::new(texts.account_sign_in).frame(false)),
+            };
+            if account.on_hover_text(texts.account_hint).clicked() {
+                self.show_account = !self.show_account;
+                self.show_settings = false;
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let settings = ui
+                    .add(egui::Button::new(RichText::new("⚙").size(18.0)).frame(false))
+                    .on_hover_text(texts.settings_hint);
+                if settings.clicked() {
+                    self.show_settings = !self.show_settings;
+                    self.show_account = false;
+                }
+            });
+        });
+    }
+
+    fn avatar_or_initial(&self, ui: &mut egui::Ui, size: f32) {
+        match &self.avatar {
+            Some(avatar) => {
+                ui.add(
+                    egui::Image::new(avatar)
+                        .fit_to_exact_size(egui::vec2(size, size))
+                        .corner_radius(size / 2.0),
+                );
+            }
+            None => {
+                let initial = self
+                    .settings
+                    .profile
+                    .as_ref()
+                    .and_then(|profile| profile.name.chars().next())
+                    .map(|c| c.to_uppercase().to_string())
+                    .unwrap_or_else(|| "?".to_owned());
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+                ui.painter().circle_filled(
+                    rect.center(),
+                    size / 2.0,
+                    Color32::from_rgb(0x2b, 0x6c, 0xb0),
+                );
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    initial,
+                    FontId::proportional(size * 0.5),
+                    Color32::WHITE,
+                );
+            }
+        }
+    }
+
+    fn account_window(&mut self, context: &egui::Context) {
+        if !self.show_account {
+            return;
+        }
+        let texts = self.texts();
+        let mut open = true;
+        let mut action = None;
+        egui::Window::new(texts.account_title)
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(320.0)
+            .anchor(egui::Align2::LEFT_BOTTOM, [8.0, -66.0])
+            .show(context, |ui| {
+                ui.set_max_width(320.0);
+                if let Some(profile) = &self.settings.profile {
+                    ui.horizontal(|ui| {
+                        self.avatar_or_initial(ui, 56.0);
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new(&profile.name).strong().size(17.0));
+                            ui.label(&profile.account);
+                            ui.label(
+                                RichText::new(match profile.provider {
+                                    Provider::Google => texts.google_account,
+                                    Provider::GitHub => texts.github_account,
+                                })
+                                .small()
+                                .weak(),
+                            );
+                        });
+                    });
+                    ui.add_space(8.0);
+                    if ui.button(texts.sign_out).clicked() {
+                        action = Some(AccountAction::SignOut);
+                    }
+                    return;
+                }
+
+                match self.sign_in.as_ref().map(|sign_in| sign_in.state()) {
+                    None => {
+                        ui.label(texts.account_intro);
+                        ui.add_space(8.0);
+                        let google = ui.add_enabled(
+                            SignIn::google_available(),
+                            egui::Button::new(texts.sign_in_google)
+                                .min_size(egui::vec2(220.0, 30.0)),
+                        );
+                        if google.clicked() {
+                            action = Some(AccountAction::SignIn(Provider::Google));
+                        }
+                        google.on_disabled_hover_text(texts.google_unavailable);
+                        let github = ui.add(
+                            egui::Button::new(texts.sign_in_github)
+                                .min_size(egui::vec2(220.0, 30.0)),
+                        );
+                        if github.clicked() {
+                            action = Some(AccountAction::SignIn(Provider::GitHub));
+                        }
+                    }
+                    Some(auth::State::Starting) => {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(texts.waiting);
+                        });
+                    }
+                    Some(auth::State::InBrowser { url }) => {
+                        if !self.browser_opened {
+                            self.browser_opened = true;
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(&url));
+                        }
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(texts.in_browser);
+                        });
+                        ui.horizontal(|ui| {
+                            if ui.button(texts.open_browser_again).clicked() {
+                                ui.ctx().open_url(egui::OpenUrl::new_tab(&url));
+                            }
+                            if ui.button(texts.cancel).clicked() {
+                                action = Some(AccountAction::Cancel);
+                            }
+                        });
+                    }
+                    Some(auth::State::DeviceCode { user_code, url }) => {
+                        if !self.browser_opened {
+                            self.browser_opened = true;
+                            ui.ctx().copy_text(user_code.clone());
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(&url));
+                        }
+                        ui.label(texts.device_code_intro);
+                        ui.label(
+                            RichText::new(&user_code)
+                                .monospace()
+                                .size(26.0)
+                                .strong()
+                                .color(Color32::from_rgb(0x89, 0xd1, 0x85)),
+                        );
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(RichText::new(texts.waiting).small());
+                        });
+                        ui.horizontal(|ui| {
+                            if ui.button(texts.copy_code).clicked() {
+                                ui.ctx().copy_text(user_code.clone());
+                            }
+                            if ui.button(texts.open_page).clicked() {
+                                ui.ctx().open_url(egui::OpenUrl::new_tab(&url));
+                            }
+                            if ui.button(texts.cancel).clicked() {
+                                action = Some(AccountAction::Cancel);
+                            }
+                        });
+                    }
+                    Some(auth::State::Done(profile)) => {
+                        action = Some(AccountAction::Finish(profile));
+                    }
+                    Some(auth::State::Failed(failure)) => {
+                        let message = match failure {
+                            Failure::Denied => texts.failure_denied,
+                            Failure::TimedOut => texts.failure_timed_out,
+                            Failure::Network => texts.failure_network,
+                            Failure::DeviceFlowDisabled => texts.failure_device_flow,
+                        };
+                        ui.label(RichText::new(message).color(Color32::from_rgb(0xf4, 0x87, 0x71)));
+                        ui.add_space(6.0);
+                        if ui.button(texts.cancel).clicked() {
+                            action = Some(AccountAction::Cancel);
+                        }
+                    }
+                }
+            });
+        match action {
+            Some(AccountAction::SignIn(provider)) => self.start_sign_in(context, provider),
+            Some(AccountAction::Cancel) => self.sign_in = None,
+            Some(AccountAction::Finish(profile)) => self.finish_sign_in(profile),
+            Some(AccountAction::SignOut) => self.sign_out(),
+            None => {}
+        }
+        if !open {
+            self.show_account = false;
+            self.sign_in = None;
+        }
+    }
+
+    fn settings_window(&mut self, context: &egui::Context) {
+        if !self.show_settings {
+            return;
+        }
+        let texts = self.texts();
+        let before = self.settings.clone();
+        let mut open = true;
+        egui::Window::new(texts.settings_title)
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::LEFT_BOTTOM, [8.0, -66.0])
+            .show(context, |ui| {
+                egui::Grid::new("settings")
+                    .num_columns(2)
+                    .spacing([16.0, 10.0])
+                    .show(ui, |ui| {
+                        ui.label(texts.settings_language);
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut self.settings.lang, Lang::Tr, "Türkçe");
+                            ui.selectable_value(&mut self.settings.lang, Lang::En, "English");
+                        });
+                        ui.end_row();
+
+                        ui.label(texts.settings_font_size);
+                        ui.add(
+                            egui::Slider::new(
+                                &mut self.settings.font_size,
+                                settings::MIN_FONT_SIZE..=settings::MAX_FONT_SIZE,
+                            )
+                            .step_by(1.0),
+                        );
+                        ui.end_row();
+                    });
+                ui.add_space(4.0);
+                ui.checkbox(&mut self.settings.auto_update, texts.settings_auto_update);
+                if self.settings.auto_update != before.auto_update {
+                    ui.label(RichText::new(texts.settings_restart_note).small().weak());
+                }
+                ui.separator();
+                ui.label(RichText::new(texts.settings_about).strong());
+                ui.label(concat!("Earth Studio v", env!("CARGO_PKG_VERSION")));
+                ui.hyperlink_to(texts.project_page, update::PROJECT_URL);
+            });
+        if self.settings != before {
+            self.settings.save();
+        }
+        if !open {
+            self.show_settings = false;
+        }
     }
 
     fn dialogs(&mut self, context: &egui::Context) {
@@ -948,22 +1303,33 @@ impl eframe::App for StudioApp {
                 .show(ui, |ui| self.update_banner(ui));
         }
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
+        egui::Panel::left("explorer")
+            .resizable(true)
+            .default_size(230.0)
+            .min_size(150.0)
+            .show(ui, |ui| {
+                egui::Panel::bottom("account")
+                    .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)))
+                    .show(ui, |ui| self.account_bar(ui));
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ui, |ui| self.explorer(ui));
+            });
+        // After the explorer, so that the explorer runs the full height and
+        // the account corner sits at the bottom left, as in VS Code.
         egui::Panel::bottom("terminal")
             .resizable(true)
             .default_size(220.0)
             .min_size(120.0)
             .show(ui, |ui| self.terminal(ui));
-        egui::Panel::left("explorer")
-            .resizable(true)
-            .default_size(230.0)
-            .min_size(150.0)
-            .show(ui, |ui| self.explorer(ui));
         egui::CentralPanel::default().show(ui, |ui| {
             self.tabs(ui);
             ui.separator();
             self.editor(ui);
         });
 
+        self.account_window(&context);
+        self.settings_window(&context);
         self.dialogs(&context);
     }
 }
