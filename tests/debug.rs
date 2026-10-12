@@ -107,6 +107,33 @@ fn counts_while_turns_and_quotes_text() {
 }
 
 #[test]
+fn pauses_on_top_level_expressions_and_keeps_the_call_line() {
+    let mut recorder = Recorder {
+        lines: vec![3, 8],
+        seen: Vec::new(),
+        stop_after: None,
+    };
+    // Line 3 holds no statement; line 8 is a top-level call.
+    let source = "fonksiyon kare(x) {\n    döndür x * x\n}\n\n\n\n\nyaz(kare(3))\n";
+    run(source, &mut recorder).unwrap();
+    assert_eq!(recorder.seen.len(), 1);
+    assert_eq!(recorder.seen[0].line, 8);
+
+    let mut inside = Recorder {
+        lines: vec![2],
+        seen: Vec::new(),
+        stop_after: None,
+    };
+    run(source, &mut inside).unwrap();
+    let frames: Vec<(&str, usize)> = inside.seen[0]
+        .frames
+        .iter()
+        .map(|frame| (frame.function.as_str(), frame.line))
+        .collect();
+    assert_eq!(frames, vec![("", 8), ("kare", 2)]);
+}
+
+#[test]
 fn stopping_at_a_pause_ends_the_program() {
     let mut recorder = Recorder {
         lines: vec![6],

@@ -91,13 +91,13 @@ impl StudioApp {
             ("⤴", texts.debug_step_out, Action::StepOut, Resume::StepOut),
         ];
         for (icon, name, action, how) in buttons {
-            let button = egui::Button::new(RichText::new(format!("{icon} {name}")).color(
-                if action == Action::Continue {
-                    palette.success
-                } else {
-                    palette.text
-                },
-            ));
+            let color = if action == Action::Continue {
+                palette.success
+            } else {
+                palette.text
+            };
+            let button = egui::Button::new(RichText::new(icon).size(15.0).color(color))
+                .min_size(egui::vec2(34.0, 26.0));
             if ui
                 .add_enabled(paused, button)
                 .on_hover_text(format!("{name} ({})", hint(action)))
@@ -106,9 +106,8 @@ impl StudioApp {
                 self.resume(how);
             }
         }
-        let stop = egui::Button::new(
-            RichText::new(format!("⏹ {}", texts.stop_short)).color(palette.danger),
-        );
+        let stop = egui::Button::new(RichText::new("⏹").size(15.0).color(palette.danger))
+            .min_size(egui::vec2(34.0, 26.0));
         if ui
             .add(stop)
             .on_hover_text(format!("{} ({})", texts.stop_short, hint(Action::Stop)))
@@ -123,17 +122,16 @@ impl StudioApp {
         let palette = self.palette();
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("🐞 {}", texts.debug_title)).strong());
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let state = match self.debug.as_ref().and_then(|s| s.paused.as_ref()) {
-                    Some(snapshot) => texts
-                        .debug_paused_at
-                        .replace("{line}", &snapshot.line.to_string()),
-                    None => texts.running.to_owned(),
-                };
-                ui.label(RichText::new(state).small().color(palette.warning));
-            });
+            ui.add_space(6.0);
+            self.debug_buttons(ui);
         });
-        ui.horizontal_wrapped(|ui| self.debug_buttons(ui));
+        let state = match self.debug.as_ref().and_then(|s| s.paused.as_ref()) {
+            Some(snapshot) => texts
+                .debug_paused_at
+                .replace("{line}", &snapshot.line.to_string()),
+            None => texts.running.to_owned(),
+        };
+        ui.label(RichText::new(state).small().color(palette.warning));
         ui.separator();
 
         let Some(session) = &self.debug else {
@@ -180,33 +178,61 @@ impl StudioApp {
                                 continue;
                             }
                             ui.label(RichText::new(title).small().weak());
-                            egui::Grid::new(("variables", global))
-                                .num_columns(3)
-                                .striped(true)
-                                .spacing([12.0, 4.0])
-                                .show(ui, |ui| {
-                                    for variable in group {
-                                        let value_color = if changed(variable) {
-                                            palette.warning
-                                        } else {
-                                            palette.syntax.number
-                                        };
-                                        ui.label(
-                                            RichText::new(&variable.name).monospace().strong(),
+                            for (row, variable) in group.into_iter().enumerate() {
+                                let value_color = if changed(variable) {
+                                    palette.warning
+                                } else {
+                                    palette.syntax.number
+                                };
+                                let fill = if row % 2 == 1 {
+                                    palette.button
+                                } else {
+                                    egui::Color32::TRANSPARENT
+                                };
+                                egui::Frame::new().fill(fill).show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.horizontal(|ui| {
+                                        let row_height = 20.0;
+                                        let name_width = 96.0;
+                                        let type_width = 64.0;
+                                        let left = Layout::left_to_right(Align::Center);
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(name_width, row_height),
+                                            left,
+                                            |ui| {
+                                                ui.set_min_width(name_width);
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        RichText::new(&variable.name)
+                                                            .monospace()
+                                                            .strong(),
+                                                    )
+                                                    .truncate(),
+                                                );
+                                            },
                                         );
-                                        ui.add(
-                                            egui::Label::new(
-                                                RichText::new(&variable.value)
-                                                    .monospace()
-                                                    .color(value_color),
-                                            )
-                                            .truncate(),
-                                        )
-                                        .on_hover_text(&variable.value);
+                                        let value_width =
+                                            (ui.available_width() - type_width).max(60.0);
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(value_width, row_height),
+                                            left,
+                                            |ui| {
+                                                ui.set_min_width(value_width);
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        RichText::new(&variable.value)
+                                                            .monospace()
+                                                            .color(value_color),
+                                                    )
+                                                    .truncate(),
+                                                )
+                                                .on_hover_text(&variable.value);
+                                            },
+                                        );
                                         ui.label(RichText::new(&variable.type_name).small().weak());
-                                        ui.end_row();
-                                    }
+                                    });
                                 });
+                            }
                         }
                     });
                 egui::CollapsingHeader::new(RichText::new(texts.debug_calls).strong())

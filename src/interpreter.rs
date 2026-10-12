@@ -138,6 +138,12 @@ impl<'io> Interpreter<'io> {
         for statement in &program.statements {
             last = None;
             if let StmtKind::Expression(expression) = &statement.kind {
+                // Kept apart from `execute` to return the value, but the
+                // debugger stops here like at any other statement.
+                self.check_interrupt()?;
+                if self.debugger.is_some() {
+                    self.debug_point(statement, &globals)?;
+                }
                 last = Some(self.evaluate(expression, &globals)?);
                 continue;
             }
