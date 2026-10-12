@@ -165,6 +165,8 @@ pub struct StudioApp {
     settings_tab: settings_window::Tab,
     /// The action whose new shortcut is being typed in the settings.
     capturing: Option<Action>,
+    /// The teacher's lesson being worked on, by number.
+    current_lesson: Option<usize>,
 }
 
 impl StudioApp {
@@ -223,6 +225,7 @@ impl StudioApp {
             applied_look: None,
             settings_tab: settings_window::Tab::General,
             capturing: None,
+            current_lesson: None,
         };
         app.load_avatar();
         crate::credentials::forget_github_token();
@@ -1391,6 +1394,11 @@ impl eframe::App for StudioApp {
         }
     }
 
+    /// Behind the panels: the theme's window colour.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        self.palette().window.to_normalized_gamma_f32()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let context = ui.ctx().clone();
         self.apply_look(&context);
@@ -1424,7 +1432,11 @@ impl eframe::App for StudioApp {
                 .show(ui, |ui| self.update_banner(ui));
         }
         egui::Panel::bottom("status")
-            .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 4)))
+            .frame(
+                egui::Frame::new()
+                    .fill(palette.window)
+                    .inner_margin(egui::Margin::symmetric(12, 4)),
+            )
             .show(ui, |ui| self.status_bar(ui));
         side_panel(self.settings.explorer_side, "explorer")
             .resizable(true)

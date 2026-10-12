@@ -142,6 +142,7 @@ impl StudioApp {
                     settings::MIN_UI_SCALE * 100.0..=settings::MAX_UI_SCALE * 100.0,
                 )
                 .step_by(10.0)
+                .fixed_decimals(0)
                 .suffix("%");
                 // Apply when the slider is let go, or the window jumps
                 // under the pointer while dragging.

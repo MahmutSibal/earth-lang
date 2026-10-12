@@ -14,6 +14,7 @@ mod completion;
 mod credentials;
 mod files;
 mod highlight;
+mod lessons;
 mod runner;
 mod settings;
 mod shortcuts;
