@@ -53,7 +53,9 @@ fib(20) = 6765
 - [Hızlı başlangıç](#hızlı-başlangıç)
 - [Earth Studio](#earth-studio)
   - [Hesap ve ayarlar](#hesap-ve-ayarlar)
-  - [Earth Asistan](#earth-asistan)
+  - [Otomatik tamamlama](#otomatik-tamamlama) · [Canlı hata denetimi](#canlı-hata-denetimi) · [Hata ayıklayıcı](#hata-ayıklayıcı)
+  - [Kişiselleştirme](#kişiselleştirme)
+  - [Earth Asistan](#earth-asistan) · [Öğretmen modu](#öğretmen-modu)
 - [Komut satırı: `earth`](#komut-satırı-earth)
 - [Dil öğreticisi](#dil-öğreticisi)
   - [İlk program](#1-ilk-program) ·
@@ -127,24 +129,86 @@ fib(20) = 6765
 
 | Bölüm | Ne işe yarar |
 |---|---|
-| **Araç çubuğu** (üst) | 📂 Klasör Aç, 📚 Örnekler, 📄 Yeni, 💾 Kaydet, ▶ Çalıştır, ⏹ Durdur ve arayüz dili (Türkçe/English). |
-| **Gezgin** (sol) | Açık klasördeki dosyalar. Bir dosyaya tıklamak onu yeni bir sekmede açar. **+ Dosya** klasörde yeni bir `.earth` dosyası oluşturur, **⟳** listeyi yeniler. |
-| **Editör** (orta) | Sekmeli kod editörü: satır numaraları ve renklendirme. Kaydedilmemiş dosyanın sekmesinde `•` görünür. Hata veren satır kırmızıyla işaretlenir. |
-| **Earth Asistan** (sağ, ✨ Asistan ya da Ctrl+I) | Yapay zekâ ile sohbet: kod yazdır, kodunu açıklat, hatanı düzelttir. Gemini ya da OpenRouter ile ücretsiz. Ayrıntılar: [Earth Asistan](#earth-asistan). |
-| **Hesap ve ayarlar** (sol alt köşe) | **👤 Giriş yap** ile Google ya da GitHub hesabınla giriş, **⚙** ile ayarlar. Ayrıntılar: [Hesap ve ayarlar](#hesap-ve-ayarlar). |
-| **Terminal** (editörün altı) | Programın çıktısı burada akar. Program `girdi` ile bir şey sorduğunda cevabı alttaki satıra yazarsın. Program çalışmıyorken aynı satır bir Earth komut satırıdır (REPL). Kenarından sürükleyerek büyütülebilir. |
-| **Durum çubuğu** (en alt) | Solda toplam indirme sayısı ve programın durumu (Hazır, Çalışıyor…, Girdi bekleniyor); sağda imlecin satır ve sütunu, dosyanın algılanan dili ve Studio'nun sürümü. |
+| **Araç çubuğu** (üst) | 📂 Klasör aç, 📚 Örnekler, 📄 Yeni, 💾 Kaydet, **▶ Çalıştır**, **🐞 Hata ayıkla**, ⏹ Durdur; sağda ✨ Asistan ve arayüz dili. Düğmelerin üzerine gelince adı ve kısayolu görünür. |
+| **Dosya gezgini** (sol) | Açık klasördeki dosyalar ve alt klasörler. Bir dosyaya tıklamak onu yeni bir sekmede açar. **➕** klasörde yeni bir `.earth` dosyası oluşturur, **🔄** listeyi yeniler. |
+| **Editör** (orta) | Sekmeli kod editörü: renklendirme, [otomatik tamamlama](#otomatik-tamamlama), [canlı hata denetimi](#canlı-hata-denetimi) ve [kesme noktaları](#hata-ayıklayıcı). Kaydedilmemiş dosyanın sekmesinde `•`, sözdizimi hatası olanınkinde `⚠` görünür. |
+| **Earth Asistan** (sağ, ✨ Asistan ya da Ctrl+I) | Yapay zekâ ile sohbet ya da [öğretmen modu](#öğretmen-modu). Gemini ya da OpenRouter ile ücretsiz. Ayrıntılar: [Earth Asistan](#earth-asistan). |
+| **Hesap ve ayarlar** (sol alt köşe) | **👤 Giriş yap** ile Google ya da GitHub hesabınla giriş, **⚙** ile [ayarlar](#kişiselleştirme). |
+| **Terminal** (editörün altı) | Programın çıktısı burada akar. Program `girdi` ile bir şey sorduğunda cevabı alttaki satıra yazarsın. Program çalışmıyorken aynı satır bir Earth komut satırıdır (REPL). Hata ayıklarken yanında hata ayıklama paneli açılır. |
+| **Durum çubuğu** (en alt) | Solda toplam indirme sayısı ve programın durumu (renkli nokta: Hazır, Çalışıyor, Duraklatıldı, Girdi bekleniyor); sağda varsa sözdizimi hatası, imlecin satır ve sütunu, dosyanın dili ve Studio'nun sürümü. |
 
 ### Klavye kısayolları
 
+Hepsi **⚙ → Kısayollar**'dan değiştirilebilir.
+
 | Kısayol | İşlem |
 |---|---|
-| **F5** | Açık dosyayı çalıştır |
+| **F5** | Açık dosyayı çalıştır (hata ayıklarken: devam) |
+| **F6** | Hata ayıkla |
 | **Shift+F5** | Çalışan programı durdur |
+| **F9** | İmlecin olduğu satıra kesme noktası koy/kaldır |
+| **F8** / **F10** / **F11** / **Shift+F11** | Devam / Adım at / İçine gir / Dışarı çık |
+| **Ctrl+Space** | Önerileri göster |
 | **Ctrl+S** | Kaydet (adsız dosyada nereye kaydedileceği sorulur) |
 | **Ctrl+N** | Yeni dosya |
-| **Enter** (terminalde) | Girdiyi gönder ya da REPL komutunu çalıştır |
-| **Tab** (editörde) | Girinti ekle |
+| **Ctrl+I** | Earth Asistan'ı aç/kapat |
+| **Tab** / **Enter** | Öneri listesi açıkken seçili öneriyi ekle |
+
+### Otomatik tamamlama
+
+Yazmaya başladığında editör öneriler sunar:
+
+- Anahtar kelimeler ve yerleşik fonksiyonlar, programın yazıldığı dilde
+  (Türkçe programda `yaz`, İngilizce programda `print`).
+- Programda tanımladığın değişken ve fonksiyon adları; bunlar listenin
+  başında gelir.
+
+Eşleştirme büyük-küçük harfe ve Türkçe harflere bakmaz: `degis` yazınca
+`değişken`, `buy` yazınca `büyük_harf` önerilir. **Tab** ya da **Enter** öneriyi
+ekler: anahtar kelimelerden sonra boşluk, fonksiyonlarda parantez gelir ve
+imleç parantezin içine konur. **↑/↓** seçer, **Esc** kapatır, **Ctrl+Space**
+listeyi istediğin zaman açar.
+
+### Canlı hata denetimi
+
+Editör, sen yazarken dosyayı sürekli denetler; **F5**'e basmadan sözdizimi
+hatalarını görürsün:
+
+- Hatanın başladığı yerden satır sonuna kadar kırmızı alt çizgi çekilir ve
+  satır numarası kırmızı olur.
+- Editörün altındaki çubukta hata yazar: `⚠ Satır 3, sütun 7: İfade
+  bekleniyordu, ')' bulundu`. Çubuğa tıklamak imleci hatanın yerine götürür.
+- Sekmede `⚠`, durum çubuğunda **Sözdizimi hatası** görünür.
+
+Tanımsız değişken ya da sıfıra bölme gibi hatalar ancak program çalışınca
+anlaşılır; onlar terminalde gösterilir.
+
+### Hata ayıklayıcı
+
+![Hata ayıklayıcı](docs/hata-ayiklama.png)
+
+1. Satır numarasının soluna tıkla (ya da **F9**): kırmızı bir **kesme noktası**
+   konur. Programı o satırda durdurmak istediğin yerlere koy.
+2. **🐞 Hata ayıkla**ya (**F6**) bas. Program ilk kesme noktasında durur;
+   kesme noktası yoksa ilk satırda durur. Durulan satır sarı vurgulanır.
+3. Terminalin yanındaki **Hata ayıklama** panelinde şunları görürsün:
+   - **Değişkenler**: o anda görünen her değişkenin değeri ve türü,
+     fonksiyon içindekiler (**Yerel**) ve programınkiler (**Genel**) ayrı.
+     Son adımdan beri değeri değişenler sarıyla gösterilir.
+   - **Çağrı yığını**: hangi fonksiyonun hangisini çağırdığı ve her birinin
+     hangi satırda olduğu.
+   - **Döngüler**: programın içinde bulunduğu her döngü ve kaçıncı turda
+     olduğu (`her (satır 2): 4. tur / 15`), bir ilerleme çubuğuyla.
+4. Devam ettirmek için:
+   - **▶ Devam** (**F8** ya da **F5**): sonraki kesme noktasına kadar.
+   - **⏭ Adım at** (**F10**): sonraki satıra; fonksiyon çağrılarının içine
+     girmeden.
+   - **⤵ İçine gir** (**F11**): sonraki satıra; çağrılan fonksiyonun içine de.
+   - **⤴ Dışarı çık** (**Shift+F11**): içinde bulunulan fonksiyon bitene kadar.
+   - **⏹ Durdur**: programı bitirir.
+
+Hata ayıklarken de kesme noktası koyup kaldırabilirsin; program bir sonraki
+adımda bunu dikkate alır.
 
 ### Program çalıştırmak
 
@@ -197,7 +261,7 @@ olup olmadığına bakar. Yeni sürüm varsa:
 3. Şeride dokunmazsan güncelleme Studio kapatılırken sessizce kurulur; bir
    sonraki açılışta yeni sürüm çalışır.
 
-Durum çubuğundaki sürüm numarasına (`v0.10.0` gibi) tıklamak hemen denetler.
+Durum çubuğundaki sürüm numarasına (`v0.11.0` gibi) tıklamak hemen denetler.
 Sol alt köşedeki **⬇ … kişi indirdi** sayacı, kurulum dosyasının GitHub'dan
 toplam indirilme sayısıdır. Studio senin hakkında hiçbir bilgi göndermez;
 yalnızca herkese açık sürüm bilgisini okur.
@@ -217,13 +281,23 @@ Sol alt köşede iki düğme var:
   e-posta adresini ya da GitHub kullanıcı adını ve profil resmini okur.
   Şifren Studio'ya hiç gelmez ve hiçbir erişim anahtarı saklanmaz. Bu
   bilgiler yalnızca bu bilgisayarda tutulur; **Çıkış yap** onları siler.
-- **⚙ Ayarlar**:
-  - **Arayüz dili**: Türkçe ya da English.
-  - **Editör yazı boyutu**: 11–24.
-  - **Asistan**: kullanılan servis ve model; **Değiştir** ile değiştirilir,
-    **API anahtarını sil** ile anahtar silinir.
-  - **Güncellemeleri otomatik indir ve kur**: Studio yeniden açılınca
-    geçerli olur.
+- **⚙ Ayarlar**: [Kişiselleştirme](#kişiselleştirme) bölümüne bak.
+
+### Kişiselleştirme
+
+**⚙ Ayarlar** penceresinde beş sekme var:
+
+- **Genel**: arayüz dili (Türkçe/English), **tema** (Gece mavisi, Koyu,
+  Açık), editör yazı boyutu (11–24) ve bütün arayüzün boyutu (%80–%160).
+- **Düzen**: dosya gezgini ve Earth Asistan panelinin solda mı sağda mı
+  duracağı. Panellerin genişliği ve terminalin yüksekliği kenarlarından
+  sürüklenerek değişir.
+- **Kısayollar**: her işlemin kısayolu. Değiştirmek için kısayola tıkla ve
+  yeni tuşlara bas (**Esc** vazgeçer). Başka bir işlemle çakışan kısayol
+  uyarıyla gösterilir; **Varsayılanlara dön** hepsini sıfırlar.
+- **Asistan**: kullanılan servis ve model; **Değiştir** ile değiştirilir,
+  **API anahtarını sil** ile anahtar silinir.
+- **Hakkında**: sürüm, proje sayfası ve otomatik güncelleme seçeneği.
 
 Ayarlar `%APPDATA%\Earth Studio\settings.json` dosyasında saklanır (Linux'ta
 `~/.config/earth-studio`, macOS'ta `~/Library/Application Support/Earth Studio`).
@@ -271,6 +345,26 @@ panelin üstündeki **⚙ Servis** ile değiştirebilirsin.
   gönderilmez.
 - Bir hata olursa panel nedenini ve servisin verdiği ayrıntıyı gösterir.
 
+#### Öğretmen modu
+
+![Öğretmen modu](docs/ogretmen.png)
+
+Panelin üstünde **💬 Asistan** ve **🎓 Öğretmen** arasında geçiş yapılır.
+Öğretmen modunda Earth Asistan bir kod öğretmeni gibi davranır:
+
+- **Seviye**: Başlangıç (hiç programlama bilmeyenler için, her terimi
+  anlatır), Orta ya da İleri.
+- **Dersler**: README'deki öğreticiyi izleyen 13 ders ve iki küçük proje
+  (sayı tahmin oyunu, not defteri). Bir derse tıkladığında öğretmen konuyu
+  kısaca anlatır, küçük bir örnek gösterir ve bir **alıştırma** verir.
+- Çözümü hemen söylemez; ipuçları ve yönlendirici sorularla ilerletir.
+- **📝 Kodumu değerlendir**: açık dosyandaki kodu ve son çalıştırmanın
+  çıktısını öğretmene gönderir. Öğretmen önce doğru olanları söyler, sonra en
+  fazla iki sorunu ipuçlarıyla gösterir.
+- **💡 İpucu**: çözümü söylemeden bir ipucu ister.
+- **✔ Ders tamam**: dersi tamamlandı olarak işaretler; ilerlemen ders
+  listesinin üstündeki çubukta görünür.
+
 Asistanı kullandığında sorun, sohbet geçmişi ve (işaretliyse) açık dosyan
 seçtiğin servise gönderilir ("Bu bilgisayar" seçeneğinde bilgisayarından
 çıkmaz). API anahtarı yalnızca bu bilgisayarda, Windows'ta **Kimlik Bilgileri
@@ -292,7 +386,7 @@ gelir) her yeni Komut İstemi ya da PowerShell penceresinde kullanılabilir:
 
 ```text
 C:\Users\sen> earth
-Earth 0.10.0 — çıkmak için 'çık' yazın
+Earth 0.11.0 — çıkmak için 'çık' yazın
 earth> değişken fiyat = 120
 earth> fiyat * 1.2
 144
@@ -1100,12 +1194,15 @@ earth-lang/
 │   ├── lexer.rs          kaynak metni satır/sütun bilgili token'lara ayırır
 │   ├── parser.rs, ast.rs özyinelemeli iniş ayrıştırıcısı ve sözdizimi ağacı
 │   ├── interpreter.rs    ağaç gezen yorumlayıcı, kapsamlar, modüller
+│   ├── debug.rs          hata ayıklayıcı kancaları: duraklama ve anlık durum
 │   ├── value.rs          değerler, listeler, sözlükler
 │   ├── stdlib.rs         girdi/çıktı dışındaki yerleşik fonksiyonlar
 │   └── main.rs           komut satırı: earth ve earth dosya.earth
 ├── studio/               Earth Studio (egui)
-│   └── src/              arayüz, renklendirme, çalıştırıcı, güncelleyici,
-│                         giriş, ayarlar, Earth Asistan
+│   └── src/              arayüz (app/: editör, hata ayıklama, ayarlar,
+│                         asistan paneli), temalar, tamamlama, kısayollar,
+│                         çalıştırıcı, güncelleyici, giriş, Earth Asistan,
+│                         öğretmenin dersleri
 ├── examples/             örnek programlar (Studio'ya gömülür)
 ├── editors/vscode/       VS Code sözdizimi renklendirme eklentisi
 ├── windows/              simge, manifest, Inno Setup kurulum betiği
@@ -1182,11 +1279,14 @@ renklendirme eklentisidir; kurulumu
 - [x] Komut satırı: `earth` kabuğu ve `earth dosya.earth`
 - [x] Earth Asistan: Gemini, OpenRouter, OpenAI ya da yerel modelle sohbet,
   ayrıştırıcıyla denetlenen kod
+- [x] Öğretmen modu, otomatik tamamlama, canlı hata denetimi
+- [x] Görsel hata ayıklayıcı: kesme noktaları, adım adım çalıştırma,
+  değişkenler, çağrı yığını, döngü turları
+- [x] Temalar, panel düzeni ve değiştirilebilir kısayollar
 - [x] VS Code sözdizimi renklendirme
 - [ ] Dosya okuma ve yazma
 - [ ] Sınıflar / kullanıcı tanımlı türler
 - [ ] Daha fazla insan dili
-- [ ] Studio'da otomatik tamamlama ve hata ayıklayıcı
 - [ ] Daha hızlı çalışma için bytecode derleyici
 
 ## Lisans

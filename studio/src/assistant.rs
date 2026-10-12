@@ -17,6 +17,8 @@ use std::thread;
 use earth::Lang;
 use serde_json::{json, Value};
 
+use crate::settings::Level;
+
 /// The services the assistant can use. All of them speak the OpenAI chat
 /// completions protocol, so only the address and the key differ. Model
 /// names change often, so they are listed from the service, never fixed
@@ -576,13 +578,17 @@ fn describe(status: u16, body: &str) -> String {
     }
 }
 
-/// The instructions and reference the model starts from.
-pub fn system_prompt(ui_lang: Lang, file: Option<OpenFile>) -> String {
+/// The instructions and reference the model starts from; with `teacher`,
+/// it teaches at that level instead of simply answering.
+pub fn system_prompt(ui_lang: Lang, file: Option<OpenFile>, teacher: Option<Level>) -> String {
     let language = match ui_lang {
         Lang::Tr => "Turkish",
         Lang::En => "English",
     };
     let mut prompt = REFERENCE.replace("{ui_language}", language);
+    if let Some(level) = teacher {
+        prompt.push_str(&teacher_instructions(level));
+    }
     if let Some(file) = file {
         let program_lang = match earth::detect_language(file.text) {
             Lang::Tr => "Turkish",
@@ -605,6 +611,40 @@ pub fn system_prompt(ui_lang: Lang, file: Option<OpenFile>) -> String {
         ));
     }
     prompt
+}
+
+/// How the teacher works, added to the reference in teacher mode.
+fn teacher_instructions(level: Level) -> String {
+    let student = match level {
+        Level::Beginner => {
+            "has never programmed before. Explain every new word in plain language, \
+             use everyday comparisons, and keep each step very small"
+        }
+        Level::Intermediate => {
+            "knows the basics (variables, conditions, loops). Build on that, \
+             introduce one new idea at a time"
+        }
+        Level::Advanced => {
+            "is comfortable programming. Be brief, focus on good structure, \
+             edge cases and clear naming"
+        }
+    };
+    format!(
+        "
+# Teacher mode
+You are now a patient, encouraging programming teacher, not just a helper.
+The student {student}.
+- Teach in short steps: explain one idea, show a tiny example in a ```earth
+  block, then give ONE small exercise and stop. Wait for the student.
+- Do not give the full solution to an exercise unless the student asks for
+  it twice; give hints and guiding questions instead.
+- When the student shares their code and its output, first say what is
+  good, then point to at most two problems, with hints to fix them. If it
+  solves the exercise, congratulate them and offer the next step.
+- Explain error messages simply: what Earth means and where to look.
+- Use the student's language and Earth keywords in that language.
+"
+    )
 }
 
 /// A fenced code block in an answer.
@@ -816,11 +856,22 @@ mod tests {
                 name: "hesap.earth",
                 text: "değişken x = 1",
             }),
+            None,
         );
         assert!(prompt.contains("(Turkish by default)"));
         assert!(prompt.contains("hesap.earth"));
         assert!(prompt.contains("Turkish keywords"));
         assert!(prompt.contains("değişken x = 1"));
+    }
+
+    #[test]
+    fn teacher_mode_adds_its_instructions() {
+        let plain = system_prompt(Lang::Tr, None, None);
+        assert!(!plain.contains("Teacher mode"));
+        let teacher = system_prompt(Lang::Tr, None, Some(Level::Beginner));
+        assert!(teacher.contains("Teacher mode"));
+        assert!(teacher.contains("never programmed before"));
+        assert!(system_prompt(Lang::Tr, None, Some(Level::Advanced)).contains("comfortable"));
     }
 
     #[test]
@@ -913,7 +964,7 @@ mod tests {
             base_url,
             api_key: Some("sk-test".to_owned()),
             model: "test-model".to_owned(),
-            system: system_prompt(Lang::Tr, None),
+            system: system_prompt(Lang::Tr, None, None),
             history: vec![Entry::user("1'den 3'e kadar yaz".to_owned())],
         }
     }

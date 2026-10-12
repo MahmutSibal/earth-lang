@@ -1,36 +1,35 @@
-//! The Earth Studio window: explorer on the left, tabbed editor in the
-//! middle, terminal at the bottom.
+//! The Earth Studio window: explorer, tabbed editor, terminal and the
+//! assistant, each in its own panel.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use earth::Lang;
 use eframe::egui::{
-    self, text::LayoutJob, Align, Color32, FontId, Key, KeyboardShortcut, Layout, Modifiers,
-    RichText, ScrollArea, TextEdit, TextFormat, ViewportCommand,
+    self, text::LayoutJob, Align, Color32, FontId, Key, Layout, RichText, ScrollArea, TextEdit,
+    TextFormat, ViewportCommand,
 };
 
 use crate::assistant::{ChatError, Entry, Job};
 use crate::auth::{self, Failure, Profile, Provider, SignIn};
 use crate::files::{self, Node};
-use crate::highlight::{self, DARK};
-use crate::runner::{Event, Runner};
-use crate::settings::{self, Settings};
+use crate::runner::{Event, Resume, Runner};
+use crate::settings::{Settings, Side};
+use crate::shortcuts::{Action, Bindings};
 use crate::texts::{texts, Texts};
+use crate::theme::{self, Palette, ThemeName};
 use crate::update::{self, Status, Updater};
 use crate::workspace;
 
 /// Older terminal output is dropped beyond this many characters.
 const TERMINAL_LIMIT: usize = 200_000;
 
-const RUN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
-const STOP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::F5);
-const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
-const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
-const ASSISTANT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::I);
-
 mod assistant_panel;
+mod debug_panel;
+mod editor;
+mod settings_window;
 
 struct Document {
     path: Option<PathBuf>,
@@ -38,9 +37,27 @@ struct Document {
     saved_text: String,
     /// The line of the last error reported in this file, 1-based.
     error_line: Option<usize>,
+    /// Lines to pause on when debugging.
+    breakpoints: BTreeSet<usize>,
+    /// The first syntax error, found while typing.
+    syntax_error: Option<editor::SyntaxError>,
+    /// The text the syntax check last saw.
+    checked_text: Option<String>,
 }
 
 impl Document {
+    fn new(path: Option<PathBuf>, text: String) -> Self {
+        Self {
+            path,
+            saved_text: text.clone(),
+            text,
+            error_line: None,
+            breakpoints: BTreeSet::new(),
+            syntax_error: None,
+            checked_text: None,
+        }
+    }
+
     fn name(&self, texts: &Texts) -> String {
         self.path
             .as_ref()
@@ -137,14 +154,27 @@ pub struct StudioApp {
     last_error: Option<String>,
     /// The cursor as a character index, where "Insert" puts code.
     cursor_index: Option<usize>,
+    // ----- editor and debugger -----
+    completion: Option<editor::Completion>,
+    /// Scroll the editor to this line on the next frame.
+    scroll_to_line: Option<usize>,
+    debug: Option<debug_panel::DebugSession>,
+    bindings: Bindings,
+    /// The theme and scale last applied, to apply changes once.
+    applied_look: Option<(String, f32)>,
+    settings_tab: settings_window::Tab,
+    /// The action whose new shortcut is being typed in the settings.
+    capturing: Option<Action>,
+    /// The teacher's lesson being worked on, by number.
+    current_lesson: Option<usize>,
 }
 
 impl StudioApp {
     pub fn new(context: &eframe::CreationContext<'_>, start: Option<PathBuf>) -> Self {
         let egui_context = context.egui_ctx.clone();
         let update_context = context.egui_ctx.clone();
-        configure_style(&egui_context);
         let settings = Settings::load();
+        let bindings = Bindings::from_settings(&settings.shortcuts);
         let lang = settings.lang;
         let auto_update = settings.auto_update;
         let wake_context = context.egui_ctx.clone();
@@ -188,6 +218,14 @@ impl StudioApp {
             undo: None,
             last_error: None,
             cursor_index: None,
+            completion: None,
+            scroll_to_line: None,
+            debug: None,
+            bindings,
+            applied_look: None,
+            settings_tab: settings_window::Tab::General,
+            capturing: None,
+            current_lesson: None,
         };
         app.load_avatar();
         crate::credentials::forget_github_token();
@@ -213,18 +251,27 @@ impl StudioApp {
         }
         if app.documents.is_empty() {
             let welcome = texts(lang).welcome.to_owned();
-            app.documents.push(Document {
-                path: None,
-                saved_text: welcome.clone(),
-                text: welcome,
-                error_line: None,
-            });
+            app.documents.push(Document::new(None, welcome));
         }
         app
     }
 
     fn texts(&self) -> &'static Texts {
         texts(self.settings.lang)
+    }
+
+    fn palette(&self) -> &'static Palette {
+        theme::palette(ThemeName::from_id(&self.settings.theme).unwrap_or(ThemeName::Midnight))
+    }
+
+    /// Applies the theme and scale when they changed.
+    fn apply_look(&mut self, context: &egui::Context) {
+        let look = (self.settings.theme.clone(), self.settings.ui_scale);
+        if self.applied_look.as_ref() != Some(&look) {
+            theme::apply(context, self.palette());
+            context.set_zoom_factor(self.settings.ui_scale);
+            self.applied_look = Some(look);
+        }
     }
 
     // ----- account -----
@@ -304,12 +351,8 @@ impl StudioApp {
                 {
                     self.documents.clear();
                 }
-                self.documents.push(Document {
-                    path: Some(path.to_path_buf()),
-                    saved_text: text.clone(),
-                    text,
-                    error_line: None,
-                });
+                self.documents
+                    .push(Document::new(Some(path.to_path_buf()), text));
                 self.active = self.documents.len() - 1;
             }
             Err(error) => {
@@ -339,12 +382,7 @@ impl StudioApp {
     }
 
     fn new_document(&mut self) {
-        self.documents.push(Document {
-            path: None,
-            text: String::new(),
-            saved_text: String::new(),
-            error_line: None,
-        });
+        self.documents.push(Document::new(None, String::new()));
         self.active = self.documents.len() - 1;
     }
 
@@ -437,6 +475,12 @@ impl StudioApp {
         if self.runner.is_busy() {
             return;
         }
+        self.debug = None;
+        self.start_program(false);
+    }
+
+    fn start_program(&mut self, debug: bool) {
+        self.completion = None;
         self.save_all_named();
         self.last_error = None;
         for document in &mut self.documents {
@@ -455,7 +499,7 @@ impl StudioApp {
         self.write_terminal(format!("▶ {title}\n"), LineKind::Info);
         self.running_program = true;
         self.running_document = Some(self.active);
-        self.runner.run(source, base_dir, file);
+        self.runner.run(source, base_dir, file, debug);
     }
 
     fn submit_terminal_line(&mut self) {
@@ -489,6 +533,7 @@ impl StudioApp {
                     column,
                     file,
                 } => self.show_error(text, line, column, file),
+                Event::Paused(snapshot) => self.paused_at(snapshot),
                 Event::Finished { interrupted } => {
                     self.waiting_for_input = false;
                     if self.running_program {
@@ -501,6 +546,7 @@ impl StudioApp {
                         self.write_terminal(format!("■ {message}\n"), LineKind::Info);
                     }
                     self.running_program = false;
+                    self.debug = None;
                 }
             }
         }
@@ -563,65 +609,91 @@ impl StudioApp {
 
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         let texts = self.texts();
+        let palette = self.palette();
+        let hint = |app: &Self, text: &str, action: Action| {
+            format!(
+                "{text} ({})",
+                crate::shortcuts::format(&app.bindings.get(action))
+            )
+        };
         ui.horizontal(|ui| {
             if let Some(logo) = &self.logo {
-                ui.add(egui::Image::new(logo).fit_to_exact_size(egui::vec2(24.0, 24.0)));
+                ui.add(egui::Image::new(logo).fit_to_exact_size(egui::vec2(26.0, 26.0)));
             }
             ui.label(RichText::new("Earth Studio").strong().size(16.0));
-            ui.separator();
-            if ui.button(texts.open_folder).clicked() {
+            ui.add_space(12.0);
+            if icon_button(ui, "📂", texts.open_folder_hint).clicked() {
                 if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                     self.open_folder(folder);
                 }
             }
-            if ui.button(texts.examples).clicked() {
+            if icon_button(ui, "📚", texts.examples_hint).clicked() {
                 self.show_examples();
             }
-            if ui
-                .button(texts.new_file)
-                .on_hover_text(ui.ctx().format_shortcut(&NEW))
-                .clicked()
+            if icon_button(
+                ui,
+                "📄",
+                &hint(self, texts.action_new_file, Action::NewFile),
+            )
+            .clicked()
             {
                 self.new_document();
             }
-            if ui
-                .button(texts.save)
-                .on_hover_text(ui.ctx().format_shortcut(&SAVE))
-                .clicked()
-            {
+            if icon_button(ui, "💾", &hint(self, texts.action_save, Action::Save)).clicked() {
                 self.save(self.active);
             }
-            ui.separator();
+            ui.add_space(8.0);
             let busy = self.runner.is_busy();
-            let run = egui::Button::new(
-                RichText::new(texts.run).color(Color32::from_rgb(0x89, 0xd1, 0x85)),
-            );
-            if ui.add_enabled(!busy, run).on_hover_text("F5").clicked() {
+            let run = egui::Button::new(RichText::new(texts.run).color(Color32::WHITE).strong())
+                .fill(palette.accent)
+                .min_size(egui::vec2(0.0, 28.0));
+            if ui
+                .add_enabled(!busy, run)
+                .on_hover_text(hint(self, texts.action_run, Action::Run))
+                .clicked()
+            {
                 self.run();
             }
-            let stop = egui::Button::new(
-                RichText::new(texts.stop).color(Color32::from_rgb(0xf4, 0x87, 0x71)),
-            );
+            let debug = egui::Button::new(texts.debug_button).min_size(egui::vec2(0.0, 28.0));
+            if ui
+                .add_enabled(!busy, debug)
+                .on_hover_text(hint(self, texts.action_debug, Action::Debug))
+                .clicked()
+            {
+                self.start_debugging();
+            }
+            let stop = egui::Button::new(RichText::new("⏹").color(palette.danger).size(16.0))
+                .min_size(egui::vec2(32.0, 28.0));
             if ui
                 .add_enabled(busy, stop)
-                .on_hover_text("Shift+F5")
+                .on_hover_text(hint(self, texts.action_stop, Action::Stop))
                 .clicked()
             {
                 self.runner.stop();
             }
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let other = match self.settings.lang {
-                    Lang::Tr => (Lang::En, "English"),
-                    Lang::En => (Lang::Tr, "Türkçe"),
+                let current = match self.settings.lang {
+                    Lang::Tr => "Türkçe",
+                    Lang::En => "English",
                 };
-                if ui.button(format!("🌐 {}", other.1)).clicked() {
-                    self.settings.lang = other.0;
-                    self.settings.save();
-                }
+                egui::ComboBox::from_id_salt("language")
+                    .selected_text(format!("🌐 {current}"))
+                    .width(120.0)
+                    .show_ui(ui, |ui| {
+                        let before = self.settings.lang;
+                        ui.selectable_value(&mut self.settings.lang, Lang::Tr, "Türkçe");
+                        ui.selectable_value(&mut self.settings.lang, Lang::En, "English");
+                        if self.settings.lang != before {
+                            self.settings.save();
+                        }
+                    });
                 let assistant = ui
-                    .selectable_label(self.settings.assistant_open, texts.assistant)
-                    .on_hover_text(texts.assistant_hint);
+                    .selectable_label(
+                        self.settings.assistant_open,
+                        RichText::new(texts.assistant).size(15.0),
+                    )
+                    .on_hover_text(hint(self, texts.action_assistant, Action::Assistant));
                 if assistant.clicked() {
                     self.toggle_assistant();
                 }
@@ -632,19 +704,19 @@ impl StudioApp {
     fn explorer(&mut self, ui: &mut egui::Ui) {
         let texts = self.texts();
         ui.horizontal(|ui| {
-            ui.label(RichText::new(texts.explorer).small().strong());
+            ui.label(RichText::new(texts.explorer_title).strong());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.folder.is_some() {
-                    if ui.small_button(texts.refresh).clicked() {
+                    if small_icon(ui, "🔄", texts.refresh_hint).clicked() {
                         self.refresh_tree();
                     }
-                    if ui.small_button(texts.new_file_in_folder).clicked() {
+                    if small_icon(ui, "➕", texts.new_file_in_folder_hint).clicked() {
                         self.new_file_name = Some(String::new());
                     }
                 }
             });
         });
-        ui.separator();
+        ui.add_space(4.0);
 
         if let Some(name) = &mut self.new_file_name {
             let response = ui.add(TextEdit::singleline(name).hint_text(texts.file_name_hint));
@@ -667,7 +739,7 @@ impl StudioApp {
         }
 
         let Some(folder) = &self.folder else {
-            ui.label(texts.no_folder);
+            ui.label(RichText::new(texts.no_folder).weak());
             if ui.button(texts.open_folder).clicked() {
                 if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                     self.open_folder(folder);
@@ -679,14 +751,18 @@ impl StudioApp {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| folder.display().to_string());
-        ui.label(RichText::new(folder_name.to_uppercase()).strong());
 
         let active_path = self.documents[self.active].path.clone();
         let mut clicked = None;
         ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                show_nodes(ui, &self.tree, active_path.as_deref(), &mut clicked);
+                egui::CollapsingHeader::new(RichText::new(format!("📂 {folder_name}")).strong())
+                    .id_salt("root")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        show_nodes(ui, &self.tree, active_path.as_deref(), &mut clicked);
+                    });
             });
         if let Some(path) = clicked {
             self.open_file(&path);
@@ -695,20 +771,52 @@ impl StudioApp {
 
     fn tabs(&mut self, ui: &mut egui::Ui) {
         let texts = self.texts();
+        let palette = self.palette();
         let mut close = None;
         ScrollArea::horizontal().id_salt("tabs").show(ui, |ui| {
             ui.horizontal(|ui| {
                 for (index, document) in self.documents.iter().enumerate() {
                     let selected = index == self.active;
-                    let title = RichText::new(document.title(texts));
-                    let title = if selected { title.strong() } else { title };
-                    if ui.selectable_label(selected, title).clicked() {
-                        self.active = index;
-                    }
-                    if ui.small_button("×").clicked() {
-                        close = Some(index);
-                    }
-                    ui.add_space(6.0);
+                    let fill = if selected {
+                        palette.selection
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+                    egui::Frame::new()
+                        .fill(fill)
+                        .corner_radius(egui::CornerRadius::same(6))
+                        .inner_margin(egui::Margin::symmetric(8, 3))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                let icon = if document.syntax_error.is_some() {
+                                    "⚠"
+                                } else {
+                                    "📄"
+                                };
+                                let title =
+                                    RichText::new(format!("{icon} {}", document.title(texts)));
+                                let title = if selected {
+                                    title.strong()
+                                } else {
+                                    title.color(palette.weak_text)
+                                };
+                                let label = egui::Label::new(title).sense(egui::Sense::click());
+                                if ui.add(label).clicked() {
+                                    self.active = index;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new("×").color(palette.weak_text),
+                                        )
+                                        .frame(false),
+                                    )
+                                    .clicked()
+                                {
+                                    close = Some(index);
+                                }
+                            });
+                        });
                 }
             });
         });
@@ -721,59 +829,13 @@ impl StudioApp {
         }
     }
 
-    fn editor(&mut self, ui: &mut egui::Ui) {
-        let font = FontId::monospace(self.settings.font_size);
-        let document = &mut self.documents[self.active];
-        let error_line = document.error_line;
-        let line_count = document.text.split('\n').count();
-
-        let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, _wrap_width: f32| {
-            // No wrapping: each source line stays one row, matching the gutter.
-            let job = highlight::layout(text.as_str(), font.clone(), &DARK, error_line);
-            ui.fonts_mut(|fonts| fonts.layout_job(job))
-        };
-
-        let mut changed = false;
-        let mut cursor = None;
-        ScrollArea::both()
-            .id_salt(("editor", self.active))
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.horizontal_top(|ui| {
-                    ui.add(
-                        egui::Label::new(line_numbers(line_count, error_line, &font))
-                            .selectable(false),
-                    );
-                    let output = TextEdit::multiline(&mut document.text)
-                        .id_salt(("text", self.active))
-                        .font(font.clone())
-                        .code_editor()
-                        .frame(egui::Frame::NONE)
-                        .lock_focus(true)
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(30)
-                        .layouter(&mut layouter)
-                        .show(ui);
-                    changed = output.response.changed();
-                    cursor = output.cursor_range.map(|range| range.primary.index.0);
-                });
-            });
-
-        if changed {
-            document.error_line = None;
-        }
-        if let Some(index) = cursor {
-            self.cursor = line_and_column(&document.text, index);
-            self.cursor_index = Some(index);
-        }
-    }
-
     fn terminal(&mut self, ui: &mut egui::Ui) {
         let texts = self.texts();
+        let palette = self.palette();
         // Fill the panel, or the resizable panel shrinks to its content.
         ui.set_min_height(ui.available_height());
         ui.horizontal(|ui| {
-            ui.label(RichText::new(texts.terminal).small().strong());
+            ui.label(RichText::new(format!("🖥 {}", texts.terminal_title)).strong());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.small_button(texts.clear).clicked() {
                     self.terminal.clear();
@@ -785,76 +847,73 @@ impl StudioApp {
                 }
             });
         });
-        ui.separator();
+        ui.add_space(2.0);
 
         let font = FontId::monospace(self.settings.font_size - 1.0);
         let input_height = 36.0;
-        ScrollArea::vertical()
-            .id_salt("terminal")
-            .stick_to_bottom(true)
-            .auto_shrink([false, false])
-            .max_height(ui.available_height() - input_height)
+        egui::Frame::new()
+            .fill(palette.editor)
+            .corner_radius(egui::CornerRadius::same(6))
+            .inner_margin(egui::Margin::same(8))
             .show(ui, |ui| {
-                let mut job = LayoutJob::default();
-                for (text, kind) in &self.terminal {
-                    let color = match kind {
-                        LineKind::Output => DARK.text,
-                        LineKind::Error => Color32::from_rgb(0xf4, 0x87, 0x71),
-                        LineKind::Info => Color32::from_rgb(0x56, 0x9c, 0xd6),
-                        LineKind::Echo => Color32::from_rgb(0xdc, 0xdc, 0xaa),
-                    };
-                    job.append(
-                        text,
-                        0.0,
-                        TextFormat {
-                            font_id: font.clone(),
-                            color,
-                            ..Default::default()
-                        },
-                    );
-                }
-                ui.add(egui::Label::new(job).selectable(true).wrap());
-            });
+                ScrollArea::vertical()
+                    .id_salt("terminal")
+                    .stick_to_bottom(true)
+                    .auto_shrink([false, false])
+                    .max_height(ui.available_height() - input_height)
+                    .show(ui, |ui| {
+                        let mut job = LayoutJob::default();
+                        for (text, kind) in &self.terminal {
+                            let color = match kind {
+                                LineKind::Output => palette.text,
+                                LineKind::Error => palette.danger,
+                                LineKind::Info => palette.accent,
+                                LineKind::Echo => palette.warning,
+                            };
+                            job.append(
+                                text,
+                                0.0,
+                                TextFormat {
+                                    font_id: font.clone(),
+                                    color,
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                        ui.add(egui::Label::new(job).selectable(true).wrap());
+                    });
 
-        let busy = self.runner.is_busy();
-        let (prompt, hint) = if busy && self.running_program {
-            ("›", texts.input_hint)
-        } else {
-            ("earth›", texts.repl_hint)
-        };
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(prompt)
-                    .monospace()
-                    .color(Color32::from_rgb(0x89, 0xd1, 0x85)),
-            );
-            let response = ui.add_enabled(
-                !busy || self.running_program,
-                TextEdit::singleline(&mut self.terminal_input)
-                    .font(font)
-                    .hint_text(hint)
-                    .desired_width(f32::INFINITY),
-            );
-            if self.focus_terminal {
-                response.request_focus();
-                self.focus_terminal = false;
-            }
-            if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                self.submit_terminal_line();
-            }
-        });
+                let busy = self.runner.is_busy();
+                let (prompt, hint) = if busy && self.running_program {
+                    ("›", texts.input_hint)
+                } else {
+                    ("earth>", texts.repl_hint)
+                };
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(prompt).monospace().color(palette.success));
+                    let response = ui.add_enabled(
+                        !busy || self.running_program,
+                        TextEdit::singleline(&mut self.terminal_input)
+                            .font(font)
+                            .hint_text(hint)
+                            .frame(egui::Frame::NONE)
+                            .desired_width(f32::INFINITY),
+                    );
+                    if self.focus_terminal {
+                        response.request_focus();
+                        self.focus_terminal = false;
+                    }
+                    if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                        self.submit_terminal_line();
+                    }
+                });
+            });
     }
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         let texts = self.texts();
+        let palette = self.palette();
         ui.horizontal(|ui| {
-            let state = if self.waiting_for_input {
-                texts.waiting_for_input
-            } else if self.runner.is_busy() {
-                texts.running
-            } else {
-                texts.ready
-            };
             if let Some(downloads) = self.updater.downloads() {
                 let separator = if self.settings.lang == Lang::Tr {
                     '.'
@@ -864,10 +923,21 @@ impl StudioApp {
                 let text = texts
                     .downloads
                     .replace("{count}", &update::group_digits(downloads, separator));
-                ui.label(RichText::new(text).small())
+                ui.label(RichText::new(text).small().color(palette.weak_text))
                     .on_hover_text(texts.downloads_hint);
-                ui.separator();
+                ui.add_space(10.0);
             }
+            let (state, color) = if self.is_paused() {
+                (texts.debug_paused, palette.warning)
+            } else if self.waiting_for_input {
+                (texts.waiting_for_input, palette.warning)
+            } else if self.runner.is_busy() {
+                (texts.running, palette.accent)
+            } else {
+                (texts.ready, palette.success)
+            };
+            let (dot, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+            ui.painter().circle_filled(dot.center(), 4.0, color);
             ui.label(RichText::new(state).small());
             let update_state = match self.updater.status() {
                 Status::Downloading { version, percent } => Some(
@@ -881,11 +951,11 @@ impl StudioApp {
             };
             if let Some(update_state) = update_state {
                 ui.separator();
-                ui.label(RichText::new(update_state).small());
+                ui.label(RichText::new(update_state).small().color(palette.weak_text));
             }
             if let Some(status) = &self.status {
                 ui.separator();
-                ui.label(RichText::new(status).small());
+                ui.label(RichText::new(status).small().color(palette.weak_text));
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let document = &self.documents[self.active];
@@ -905,8 +975,6 @@ impl StudioApp {
                     self.updater.check_now();
                 }
                 ui.separator();
-                ui.label(RichText::new("UTF-8").small());
-                ui.separator();
                 ui.label(RichText::new(program_lang).small());
                 ui.separator();
                 let position = texts
@@ -914,6 +982,24 @@ impl StudioApp {
                     .replace("{line}", &self.cursor.0.to_string())
                     .replace("{column}", &self.cursor.1.to_string());
                 ui.label(RichText::new(position).small());
+                if let Some(error) = &document.syntax_error {
+                    ui.separator();
+                    let line = error.line;
+                    let column = error.column;
+                    let response = ui
+                        .add(
+                            egui::Label::new(
+                                RichText::new(texts.syntax_errors_count)
+                                    .small()
+                                    .color(palette.danger),
+                            )
+                            .sense(egui::Sense::click()),
+                        )
+                        .on_hover_text(&error.message);
+                    if response.clicked() {
+                        self.go_to(ui.ctx(), line, column);
+                    }
+                }
             });
         });
     }
@@ -1174,87 +1260,6 @@ impl StudioApp {
         }
     }
 
-    fn settings_window(&mut self, context: &egui::Context) {
-        if !self.show_settings {
-            return;
-        }
-        let texts = self.texts();
-        let before = self.settings.clone();
-        let mut open = true;
-        let mut forget_key = false;
-        let mut open_setup = false;
-        egui::Window::new(texts.settings_title)
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::LEFT_BOTTOM, [8.0, -66.0])
-            .show(context, |ui| {
-                egui::Grid::new("settings")
-                    .num_columns(2)
-                    .spacing([16.0, 10.0])
-                    .show(ui, |ui| {
-                        ui.label(texts.settings_language);
-                        ui.horizontal(|ui| {
-                            ui.selectable_value(&mut self.settings.lang, Lang::Tr, "Türkçe");
-                            ui.selectable_value(&mut self.settings.lang, Lang::En, "English");
-                        });
-                        ui.end_row();
-
-                        ui.label(texts.settings_font_size);
-                        ui.add(
-                            egui::Slider::new(
-                                &mut self.settings.font_size,
-                                settings::MIN_FONT_SIZE..=settings::MAX_FONT_SIZE,
-                            )
-                            .step_by(1.0),
-                        );
-                        ui.end_row();
-                    });
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label(texts.assistant_settings_label);
-                    let current = if self.assistant_ready() {
-                        format!(
-                            "{} · {}",
-                            assistant_panel::service_name(self.settings.ai_service.as_str(), texts),
-                            self.settings.ai_model
-                        )
-                    } else {
-                        texts.assistant_not_set.to_owned()
-                    };
-                    ui.label(RichText::new(current).weak());
-                    if ui.small_button(texts.assistant_change).clicked() {
-                        open_setup = true;
-                    }
-                });
-                if self.api_key.is_some() && ui.button(texts.assistant_forget_key).clicked() {
-                    forget_key = true;
-                }
-                ui.add_space(4.0);
-                ui.checkbox(&mut self.settings.auto_update, texts.settings_auto_update);
-                if self.settings.auto_update != before.auto_update {
-                    ui.label(RichText::new(texts.settings_restart_note).small().weak());
-                }
-                ui.separator();
-                ui.label(RichText::new(texts.settings_about).strong());
-                ui.label(concat!("Earth Studio v", env!("CARGO_PKG_VERSION")));
-                ui.hyperlink_to(texts.project_page, update::PROJECT_URL);
-            });
-        if self.settings != before {
-            self.settings.save();
-        }
-        if forget_key {
-            self.forget_api_key();
-        }
-        if open_setup {
-            self.open_setup();
-            self.show_settings = false;
-        }
-        if !open {
-            self.show_settings = false;
-        }
-    }
-
     fn dialogs(&mut self, context: &egui::Context) {
         let Some(confirm) = &self.confirm else {
             return;
@@ -1326,22 +1331,57 @@ impl StudioApp {
     }
 
     fn shortcuts(&mut self, context: &egui::Context) {
-        if context.input_mut(|i| i.consume_shortcut(&STOP)) {
-            self.runner.stop();
+        if self.capturing.is_some() {
+            return;
         }
-        if context.input_mut(|i| i.consume_shortcut(&RUN)) {
-            self.run();
-        }
-        if context.input_mut(|i| i.consume_shortcut(&SAVE)) {
-            self.save(self.active);
-        }
-        if context.input_mut(|i| i.consume_shortcut(&NEW)) {
-            self.new_document();
-        }
-        if context.input_mut(|i| i.consume_shortcut(&ASSISTANT)) {
-            self.toggle_assistant();
+        let pressed: Vec<Action> = Action::ALL
+            .into_iter()
+            .filter(|action| *action != Action::Complete)
+            .filter(|action| {
+                let shortcut = self.bindings.get(*action);
+                context.input_mut(|input| input.consume_shortcut(&shortcut))
+            })
+            .collect();
+        let paused = self.is_paused();
+        for action in pressed {
+            match action {
+                Action::Stop => self.runner.stop(),
+                // Like VS Code, Run goes on when paused.
+                Action::Run if paused => self.resume(Resume::Continue),
+                Action::Run => self.run(),
+                Action::Debug => self.start_debugging(),
+                Action::Continue => self.resume(Resume::Continue),
+                Action::StepOver => self.resume(Resume::StepOver),
+                Action::StepInto => self.resume(Resume::StepInto),
+                Action::StepOut => self.resume(Resume::StepOut),
+                Action::ToggleBreakpoint => self.toggle_breakpoint(self.cursor.0),
+                Action::Save => {
+                    self.save(self.active);
+                }
+                Action::NewFile => self.new_document(),
+                Action::Assistant => self.toggle_assistant(),
+                Action::Complete => {}
+            }
         }
     }
+}
+
+/// A side panel on the side the settings ask for.
+fn side_panel(side: Side, id: &'static str) -> egui::Panel {
+    match side {
+        Side::Left => egui::Panel::left(id),
+        Side::Right => egui::Panel::right(id),
+    }
+}
+
+fn icon_button(ui: &mut egui::Ui, icon: &str, hint: &str) -> egui::Response {
+    ui.add(egui::Button::new(RichText::new(icon).size(16.0)).min_size(egui::vec2(32.0, 28.0)))
+        .on_hover_text(hint)
+}
+
+fn small_icon(ui: &mut egui::Ui, icon: &str, hint: &str) -> egui::Response {
+    ui.add(egui::Button::new(RichText::new(icon).size(13.0)).frame(false))
+        .on_hover_text(hint)
 }
 
 impl eframe::App for StudioApp {
@@ -1354,10 +1394,17 @@ impl eframe::App for StudioApp {
         }
     }
 
+    /// Behind the panels: the theme's window colour.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        self.palette().window.to_normalized_gamma_f32()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let context = ui.ctx().clone();
+        self.apply_look(&context);
         self.handle_events();
         self.shortcuts(&context);
+        self.live_check();
 
         if context.input(|i| i.viewport().close_requested())
             && !self.allow_close
@@ -1367,11 +1414,10 @@ impl eframe::App for StudioApp {
             self.confirm = Some(Confirm::Quit);
         }
 
-        egui::Panel::top("toolbar").show(ui, |ui| {
-            ui.add_space(4.0);
-            self.toolbar(ui);
-            ui.add_space(2.0);
-        });
+        let palette = self.palette();
+        egui::Panel::top("toolbar")
+            .frame(theme::card(palette).inner_margin(egui::Margin::symmetric(10, 6)))
+            .show(ui, |ui| self.toolbar(ui));
         let announces_update = matches!(
             self.updater.status(),
             Status::Ready { .. } | Status::Available { .. }
@@ -1379,17 +1425,24 @@ impl eframe::App for StudioApp {
         if announces_update && !self.update_banner_hidden {
             egui::Panel::top("update")
                 .frame(
-                    egui::Frame::new()
-                        .fill(Color32::from_rgb(0x1e, 0x32, 0x24))
+                    theme::card(palette)
+                        .fill(palette.success.gamma_multiply(0.15))
                         .inner_margin(egui::Margin::symmetric(10, 6)),
                 )
                 .show(ui, |ui| self.update_banner(ui));
         }
-        egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
-        egui::Panel::left("explorer")
+        egui::Panel::bottom("status")
+            .frame(
+                egui::Frame::new()
+                    .fill(palette.window)
+                    .inner_margin(egui::Margin::symmetric(12, 4)),
+            )
+            .show(ui, |ui| self.status_bar(ui));
+        side_panel(self.settings.explorer_side, "explorer")
             .resizable(true)
-            .default_size(230.0)
-            .min_size(150.0)
+            .default_size(240.0)
+            .min_size(160.0)
+            .frame(theme::card(palette))
             .show(ui, |ui| {
                 egui::Panel::bottom("account")
                     .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)))
@@ -1399,24 +1452,54 @@ impl eframe::App for StudioApp {
                     .show(ui, |ui| self.explorer(ui));
             });
         if self.settings.assistant_open {
-            egui::Panel::right("assistant")
+            side_panel(self.settings.assistant_side, "assistant")
                 .resizable(true)
                 .default_size(380.0)
                 .min_size(280.0)
+                .frame(theme::card(palette))
                 .show(ui, |ui| self.assistant_panel(ui));
         }
-        // After the explorer, so that the explorer runs the full height and
-        // the account corner sits at the bottom left, as in VS Code.
+        // After the side panels, so that they run the full height and the
+        // terminal sits under the editor, as in VS Code.
         egui::Panel::bottom("terminal")
             .resizable(true)
-            .default_size(220.0)
+            .default_size(290.0)
             .min_size(120.0)
-            .show(ui, |ui| self.terminal(ui));
-        egui::CentralPanel::default().show(ui, |ui| {
-            self.tabs(ui);
-            ui.separator();
-            self.editor(ui);
-        });
+            .frame(theme::card(palette))
+            .show(ui, |ui| {
+                if self.debug.is_some() {
+                    egui::Panel::right("debug")
+                        .resizable(true)
+                        .default_size(400.0)
+                        .min_size(260.0)
+                        .frame(egui::Frame::new().inner_margin(egui::Margin {
+                            left: 10,
+                            ..Default::default()
+                        }))
+                        .show(ui, |ui| self.debug_panel(ui));
+                }
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ui, |ui| self.terminal(ui));
+            });
+        egui::CentralPanel::default()
+            .frame(theme::card(palette))
+            .show(ui, |ui| {
+                self.tabs(ui);
+                ui.add_space(4.0);
+                if self.documents[self.active].syntax_error.is_some() {
+                    egui::Panel::bottom("syntax")
+                        .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(4, 4)))
+                        .show(ui, |ui| self.syntax_bar(ui));
+                }
+                egui::CentralPanel::default()
+                    .frame(
+                        egui::Frame::new()
+                            .fill(palette.editor)
+                            .corner_radius(egui::CornerRadius::same(6)),
+                    )
+                    .show(ui, |ui| self.editor(ui));
+            });
 
         self.poll_assistant();
         self.replace_window(&context);
@@ -1468,33 +1551,6 @@ fn show_nodes(
     }
 }
 
-fn line_numbers(count: usize, error_line: Option<usize>, font: &FontId) -> LayoutJob {
-    let width = count.to_string().len().max(3);
-    let mut job = LayoutJob::default();
-    for line in 1..=count {
-        let is_error = error_line == Some(line);
-        let text = if line == count {
-            format!("{line:>width$} ")
-        } else {
-            format!("{line:>width$} \n")
-        };
-        job.append(
-            &text,
-            0.0,
-            TextFormat {
-                font_id: font.clone(),
-                color: if is_error {
-                    Color32::from_rgb(0xf4, 0x87, 0x71)
-                } else {
-                    Color32::from_gray(0x6e)
-                },
-                ..Default::default()
-            },
-        );
-    }
-    job
-}
-
 /// 1-based line and column of a character index.
 fn line_and_column(text: &str, index: usize) -> (usize, usize) {
     let mut line = 1;
@@ -1508,23 +1564,6 @@ fn line_and_column(text: &str, index: usize) -> (usize, usize) {
         }
     }
     (line, column)
-}
-
-fn configure_style(context: &egui::Context) {
-    // The syntax colours are made for a dark background, so Studio stays
-    // dark even when the system theme is light.
-    context.set_theme(egui::Theme::Dark);
-    context.all_styles_mut(|style| {
-        style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-        style.spacing.button_padding = egui::vec2(8.0, 4.0);
-        for (text_style, font) in style.text_styles.iter_mut() {
-            font.size = match text_style {
-                egui::TextStyle::Small => 12.0,
-                egui::TextStyle::Heading => 20.0,
-                _ => 14.5,
-            };
-        }
-    });
 }
 
 #[cfg(test)]

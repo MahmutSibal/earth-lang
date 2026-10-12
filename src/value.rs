@@ -268,6 +268,11 @@ impl Scope {
         }
     }
 
+    /// The scope this one looks names up in next.
+    pub fn parent(&self) -> Option<Env> {
+        self.parent.clone()
+    }
+
     /// The variables defined directly in this scope, not in its parents.
     pub fn own_values(&self) -> impl Iterator<Item = (&String, &Value)> {
         self.values.iter()

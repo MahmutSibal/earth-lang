@@ -1,15 +1,19 @@
 //! Runs Earth programs on a background thread so the window stays
 //! responsive. Output streams back as events; `girdi` reads lines typed into
 //! the terminal; the Stop button sets the interpreter's interrupt flag.
+//! A program run for debugging pauses at breakpoints and steps, sending
+//! what it sees as `Event::Paused` and waiting for a `Resume`.
 
+use std::collections::BTreeSet;
 use std::io::{self, BufRead, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use earth::debug::{Debugger, Snapshot};
 use earth::value::Value;
 use earth::{Interpreter, Lang};
 
@@ -22,6 +26,7 @@ enum Command {
         source: String,
         base_dir: PathBuf,
         file: Option<PathBuf>,
+        debug: bool,
     },
     Repl {
         code: String,
@@ -45,13 +50,32 @@ pub enum Event {
     Finished {
         interrupted: bool,
     },
+    /// A program run for debugging stopped at a breakpoint or a step.
+    Paused(Snapshot),
+}
+
+/// How a paused program goes on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Resume {
+    /// Until the next breakpoint.
+    Continue,
+    /// To the next statement, wherever it is.
+    StepInto,
+    /// To the next statement in this function or an outer one.
+    StepOver,
+    /// To the next statement after this function returns.
+    StepOut,
 }
 
 pub struct Runner {
     commands: Sender<Command>,
     events: Receiver<Event>,
     input: Sender<String>,
+    resume: Sender<Resume>,
     interrupt: Arc<AtomicBool>,
+    /// Lines of the main program to pause on; changes apply at once, even
+    /// while a program runs.
+    breakpoints: Arc<Mutex<BTreeSet<usize>>>,
     busy: bool,
 }
 
@@ -61,12 +85,16 @@ impl Runner {
         let (commands, command_receiver) = mpsc::channel();
         let (event_sender, events) = mpsc::channel();
         let (input, input_receiver) = mpsc::channel();
+        let (resume, resume_receiver) = mpsc::channel();
         let interrupt = Arc::new(AtomicBool::new(false));
+        let breakpoints = Arc::new(Mutex::new(BTreeSet::new()));
 
         let worker = Worker {
             events: event_sender,
             input: Arc::new(Mutex::new(input_receiver)),
+            resume: Arc::new(Mutex::new(resume_receiver)),
             interrupt: Arc::clone(&interrupt),
+            breakpoints: Arc::clone(&breakpoints),
             wake: Arc::new(wake),
         };
         thread::Builder::new()
@@ -79,7 +107,9 @@ impl Runner {
             commands,
             events,
             input,
+            resume,
             interrupt,
+            breakpoints,
             busy: false,
         }
     }
@@ -88,12 +118,26 @@ impl Runner {
         self.busy
     }
 
-    pub fn run(&mut self, source: String, base_dir: PathBuf, file: Option<PathBuf>) {
+    /// Runs a program; with `debug` it pauses at breakpoints, or at its
+    /// first statement when there are none.
+    pub fn run(&mut self, source: String, base_dir: PathBuf, file: Option<PathBuf>, debug: bool) {
         self.start(Command::Run {
             source,
             base_dir,
             file,
+            debug,
         });
+    }
+
+    pub fn set_breakpoints(&self, lines: &BTreeSet<usize>) {
+        if let Ok(mut breakpoints) = self.breakpoints.lock() {
+            breakpoints.clone_from(lines);
+        }
+    }
+
+    /// Lets a paused program go on.
+    pub fn resume(&self, how: Resume) {
+        let _ = self.resume.send(how);
     }
 
     pub fn repl(&mut self, code: String, lang: Lang) {
@@ -129,7 +173,9 @@ impl Runner {
 struct Worker {
     events: Sender<Event>,
     input: Arc<Mutex<Receiver<String>>>,
+    resume: Arc<Mutex<Receiver<Resume>>>,
     interrupt: Arc<AtomicBool>,
+    breakpoints: Arc<Mutex<BTreeSet<usize>>>,
     wake: Arc<dyn Fn() + Send + Sync>,
 }
 
@@ -146,7 +192,8 @@ impl Worker {
                     source,
                     base_dir,
                     file,
-                } => self.run(&source, base_dir, file),
+                    debug,
+                } => self.run(&source, base_dir, file, debug),
                 Command::Repl { code, lang } => {
                     if repl.as_ref().is_none_or(|(current, _)| *current != lang) {
                         let mut interpreter =
@@ -176,14 +223,32 @@ impl Worker {
         }
     }
 
-    fn run(&self, source: &str, base_dir: PathBuf, file: Option<PathBuf>) {
+    fn run(&self, source: &str, base_dir: PathBuf, file: Option<PathBuf>, debug: bool) {
         let lang = earth::detect_language(source);
         let mut output = self.output();
         let mut input = self.input();
+        // Resumes sent before this run must not move it.
+        if let Ok(resume) = self.resume.lock() {
+            while resume.try_recv().is_ok() {}
+        }
+        let mut debugger = StudioDebugger {
+            mode: Mode::Continue,
+            breakpoints: Arc::clone(&self.breakpoints),
+            resume: Arc::clone(&self.resume),
+            interrupt: Arc::clone(&self.interrupt),
+            events: self.events.clone(),
+            wake: Arc::clone(&self.wake),
+        };
+        if self.breakpoints.lock().is_ok_and(|lines| lines.is_empty()) {
+            debugger.mode = Mode::StepInto;
+        }
         let result = earth::parse(source).and_then(|program| {
             let mut interpreter = Interpreter::new(&mut output, &mut input, lang);
             interpreter.set_base_dir(base_dir);
             interpreter.set_interrupt(Arc::clone(&self.interrupt));
+            if debug {
+                interpreter.set_debugger(&mut debugger);
+            }
             interpreter.run(&program)
         });
         if let Err(error) = result {
@@ -222,6 +287,73 @@ impl Worker {
     fn send(&self, event: Event) {
         let _ = self.events.send(event);
         (self.wake)();
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Mode {
+    Continue,
+    StepInto,
+    /// Pause at a depth at most this.
+    StepOver(usize),
+    /// Pause at a depth below this.
+    StepOut(usize),
+}
+
+struct StudioDebugger {
+    mode: Mode,
+    breakpoints: Arc<Mutex<BTreeSet<usize>>>,
+    resume: Arc<Mutex<Receiver<Resume>>>,
+    interrupt: Arc<AtomicBool>,
+    events: Sender<Event>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl Debugger for StudioDebugger {
+    fn should_pause(&mut self, line: usize, file: Option<&Path>, depth: usize) -> bool {
+        if self.interrupt.load(Ordering::Relaxed) {
+            return false;
+        }
+        // Breakpoints are lines of the main program, not of modules.
+        let breakpoint = file.is_none()
+            && self
+                .breakpoints
+                .lock()
+                .is_ok_and(|lines| lines.contains(&line));
+        breakpoint
+            || match self.mode {
+                Mode::Continue => false,
+                Mode::StepInto => true,
+                Mode::StepOver(limit) => depth <= limit,
+                Mode::StepOut(limit) => depth < limit,
+            }
+    }
+
+    fn pause(&mut self, snapshot: Snapshot) -> bool {
+        let depth = snapshot.frames.len().saturating_sub(1);
+        let _ = self.events.send(Event::Paused(snapshot));
+        (self.wake)();
+        let Ok(resume) = self.resume.lock() else {
+            return false;
+        };
+        loop {
+            if self.interrupt.load(Ordering::Relaxed) {
+                return false;
+            }
+            match resume.recv_timeout(Duration::from_millis(50)) {
+                Ok(how) => {
+                    self.mode = match how {
+                        Resume::Continue => Mode::Continue,
+                        Resume::StepInto => Mode::StepInto,
+                        Resume::StepOver => Mode::StepOver(depth),
+                        Resume::StepOut => Mode::StepOut(depth),
+                    };
+                    return true;
+                }
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => return false,
+            }
+        }
     }
 }
 
@@ -340,6 +472,7 @@ mod tests {
             "değişken ad = girdi(\"? \")\nyaz(\"Merhaba \" + ad)\nyaz(1 / 0)".to_owned(),
             ".".into(),
             None,
+            false,
         );
         runner.send_input("Ada".to_owned());
         let events = wait_until_finished(&mut runner);
@@ -352,7 +485,7 @@ mod tests {
     #[test]
     fn stops_endless_programs_and_waiting_input() {
         let mut runner = Runner::new(|| {});
-        runner.run("iken doğru { }".to_owned(), ".".into(), None);
+        runner.run("iken doğru { }".to_owned(), ".".into(), None, false);
         std::thread::sleep(Duration::from_millis(50));
         runner.stop();
         let events = wait_until_finished(&mut runner);
@@ -360,10 +493,73 @@ mod tests {
             .iter()
             .any(|event| matches!(event, Event::Finished { interrupted: true })));
 
-        runner.run("girdi()".to_owned(), ".".into(), None);
+        runner.run("girdi()".to_owned(), ".".into(), None, false);
         std::thread::sleep(Duration::from_millis(50));
         runner.stop();
         wait_until_finished(&mut runner);
+    }
+
+    /// Waits for the program to pause and returns where.
+    fn wait_for_pause(runner: &mut Runner, events: &mut Vec<Event>) -> earth::debug::Snapshot {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            assert!(Instant::now() < deadline, "the program did not pause");
+            for event in runner.poll() {
+                if let Event::Paused(snapshot) = event {
+                    return snapshot;
+                }
+                events.push(event);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn debugs_with_breakpoints_and_steps() {
+        use super::Resume;
+        let source =
+            "değişken t = 0\nfonksiyon f(x) {\n    döndür x + 1\n}\nt = f(t)\nt = f(t)\nyaz(t)";
+        let mut runner = Runner::new(|| {});
+        let mut events = Vec::new();
+
+        // Without breakpoints a debug run stops at the first statement.
+        runner.set_breakpoints(&Default::default());
+        runner.run(source.to_owned(), ".".into(), None, true);
+        assert_eq!(wait_for_pause(&mut runner, &mut events).line, 1);
+        runner.resume(Resume::StepOver);
+        assert_eq!(wait_for_pause(&mut runner, &mut events).line, 2);
+        runner.resume(Resume::StepOver);
+        assert_eq!(wait_for_pause(&mut runner, &mut events).line, 5);
+        runner.resume(Resume::StepInto);
+        let inside = wait_for_pause(&mut runner, &mut events);
+        assert_eq!((inside.line, inside.frames.len()), (3, 2));
+        runner.resume(Resume::StepOut);
+        assert_eq!(wait_for_pause(&mut runner, &mut events).line, 6);
+        runner.resume(Resume::Continue);
+        events.extend(wait_until_finished(&mut runner));
+        assert_eq!(output(&events), "2\n");
+
+        // With a breakpoint it runs up to it, every time it is reached.
+        runner.set_breakpoints(&[3].into());
+        runner.run(source.to_owned(), ".".into(), None, true);
+        let first = wait_for_pause(&mut runner, &mut events);
+        assert_eq!(first.line, 3);
+        assert!(first
+            .variables
+            .iter()
+            .any(|v| v.name == "x" && v.value == "0"));
+        runner.resume(Resume::Continue);
+        let second = wait_for_pause(&mut runner, &mut events);
+        assert!(second
+            .variables
+            .iter()
+            .any(|v| v.name == "x" && v.value == "1"));
+        // Stop while paused.
+        runner.stop();
+        let finished = wait_until_finished(&mut runner);
+        assert!(finished
+            .iter()
+            .any(|event| matches!(event, Event::Finished { interrupted: true })));
     }
 
     #[test]

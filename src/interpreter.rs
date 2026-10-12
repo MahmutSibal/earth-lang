@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -6,7 +6,8 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::ast::{BinaryOp, Expr, LogicalOp, Program, Stmt, UnaryOp};
+use crate::ast::{BinaryOp, Expr, LogicalOp, Program, Stmt, StmtKind, UnaryOp};
+use crate::debug::{self, Debugger, LoopTurn, Snapshot, Variable};
 use crate::error::{Error, Position};
 use crate::keywords::{builtins, Builtin, Lang};
 use crate::messages::{Callee, Message};
@@ -47,6 +48,19 @@ pub struct Interpreter<'io> {
     modules: HashMap<PathBuf, Vec<(String, Value)>>,
     /// Set from another thread to stop the program, e.g. by a Stop button.
     interrupt: Option<Arc<AtomicBool>>,
+    debugger: Option<&'io mut dyn Debugger>,
+    /// The program, then each function call or module being run.
+    frames: Vec<CallFrame>,
+    /// The loops being run, outermost first.
+    loops: Vec<LoopTurn>,
+}
+
+struct CallFrame {
+    name: String,
+    /// The statement being run; kept only while debugging.
+    line: usize,
+    /// The module file, for functions and modules loaded with `içe_aktar`.
+    file: Option<Rc<Path>>,
 }
 
 struct Module {
@@ -73,6 +87,13 @@ impl<'io> Interpreter<'io> {
             loading: Vec::new(),
             modules: HashMap::new(),
             interrupt: None,
+            debugger: None,
+            frames: vec![CallFrame {
+                name: String::new(),
+                line: 0,
+                file: None,
+            }],
+            loops: Vec::new(),
         }
     }
 
@@ -88,6 +109,12 @@ impl<'io> Interpreter<'io> {
     /// running again.
     pub fn set_interrupt(&mut self, flag: Arc<AtomicBool>) {
         self.interrupt = Some(flag);
+    }
+
+    /// Lets a debugger pause the program before any statement; see
+    /// [`debug`](crate::debug).
+    pub fn set_debugger(&mut self, debugger: &'io mut dyn Debugger) {
+        self.debugger = Some(debugger);
     }
 
     fn check_interrupt(&self) -> Result<(), Error> {
@@ -110,7 +137,13 @@ impl<'io> Interpreter<'io> {
         let mut last = None;
         for statement in &program.statements {
             last = None;
-            if let Stmt::Expression(expression) = statement {
+            if let StmtKind::Expression(expression) = &statement.kind {
+                // Kept apart from `execute` to return the value, but the
+                // debugger stops here like at any other statement.
+                self.check_interrupt()?;
+                if self.debugger.is_some() {
+                    self.debug_point(statement, &globals)?;
+                }
                 last = Some(self.evaluate(expression, &globals)?);
                 continue;
             }
@@ -134,15 +167,18 @@ impl<'io> Interpreter<'io> {
 
     fn execute(&mut self, statement: &Stmt, env: &Env) -> Result<Flow, Error> {
         self.check_interrupt()?;
-        match statement {
-            Stmt::Expression(expression) => {
+        if self.debugger.is_some() {
+            self.debug_point(statement, env)?;
+        }
+        match &statement.kind {
+            StmtKind::Expression(expression) => {
                 self.evaluate(expression, env)?;
             }
-            Stmt::Let { name, value } => {
+            StmtKind::Let { name, value } => {
                 let value = self.evaluate(value, env)?;
                 env.borrow_mut().define(name.clone(), value);
             }
-            Stmt::Assign {
+            StmtKind::Assign {
                 name,
                 value,
                 position,
@@ -155,7 +191,7 @@ impl<'io> Interpreter<'io> {
                     ));
                 }
             }
-            Stmt::IndexAssign {
+            StmtKind::IndexAssign {
                 target,
                 index,
                 value,
@@ -182,7 +218,7 @@ impl<'io> Interpreter<'io> {
                     }
                 }
             }
-            Stmt::If {
+            StmtKind::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -194,18 +230,17 @@ impl<'io> Interpreter<'io> {
                     return self.execute_block(else_branch, &Scope::new_child(env));
                 }
             }
-            Stmt::While { condition, body } => {
-                while self.evaluate(condition, env)?.is_truthy() {
-                    // An empty body runs no statements, so check here too.
-                    self.check_interrupt()?;
-                    match self.execute_block(body, &Scope::new_child(env))? {
-                        Flow::Break => break,
-                        Flow::Normal | Flow::Continue => {}
-                        flow @ Flow::Return(_) => return Ok(flow),
-                    }
-                }
+            StmtKind::While { condition, body } => {
+                self.loops.push(LoopTurn {
+                    line: statement.position.line,
+                    turn: 0,
+                    total: None,
+                });
+                let flow = self.while_loop(condition, body, env);
+                self.loops.pop();
+                return flow;
             }
-            Stmt::For {
+            StmtKind::For {
                 variable,
                 iterable,
                 body,
@@ -224,18 +259,16 @@ impl<'io> Interpreter<'io> {
                         ))
                     }
                 };
-                for item in items {
-                    self.check_interrupt()?;
-                    let scope = Scope::new_child(env);
-                    scope.borrow_mut().define(variable.clone(), item);
-                    match self.execute_block(body, &scope)? {
-                        Flow::Break => break,
-                        Flow::Normal | Flow::Continue => {}
-                        flow @ Flow::Return(_) => return Ok(flow),
-                    }
-                }
+                self.loops.push(LoopTurn {
+                    line: statement.position.line,
+                    turn: 0,
+                    total: Some(items.len()),
+                });
+                let flow = self.for_loop(variable, items, body, env);
+                self.loops.pop();
+                return flow;
             }
-            Stmt::Function(decl) => {
+            StmtKind::Function(decl) => {
                 let function = Function {
                     decl: Rc::clone(decl),
                     closure: Rc::clone(env),
@@ -244,14 +277,14 @@ impl<'io> Interpreter<'io> {
                 env.borrow_mut()
                     .define(decl.name.clone(), Value::Function(Rc::new(function)));
             }
-            Stmt::Return(value) => {
+            StmtKind::Return(value) => {
                 let value = match value {
                     Some(value) => self.evaluate(value, env)?,
                     None => Value::Nil,
                 };
                 return Ok(Flow::Return(value));
             }
-            Stmt::Try {
+            StmtKind::Try {
                 body,
                 variable,
                 handler,
@@ -274,19 +307,140 @@ impl<'io> Interpreter<'io> {
                 }
                 return self.execute_block(handler, &scope);
             }
-            Stmt::Throw { value, position } => {
+            StmtKind::Throw { value, position } => {
                 let value = self.evaluate(value, env)?;
                 return Err(Error::at(*position, Message::Thrown(value)));
             }
-            Stmt::Import { path, position } => {
+            StmtKind::Import { path, position } => {
                 for (name, value) in self.import(path, *position)? {
                     env.borrow_mut().define(name, value);
                 }
             }
-            Stmt::Break => return Ok(Flow::Break),
-            Stmt::Continue => return Ok(Flow::Continue),
+            StmtKind::Break => return Ok(Flow::Break),
+            StmtKind::Continue => return Ok(Flow::Continue),
         }
         Ok(Flow::Normal)
+    }
+
+    fn while_loop(&mut self, condition: &Expr, body: &[Stmt], env: &Env) -> Result<Flow, Error> {
+        while self.evaluate(condition, env)?.is_truthy() {
+            // An empty body runs no statements, so check here too.
+            self.check_interrupt()?;
+            if let Some(turn) = self.loops.last_mut() {
+                turn.turn += 1;
+            }
+            match self.execute_block(body, &Scope::new_child(env))? {
+                Flow::Break => break,
+                Flow::Normal | Flow::Continue => {}
+                flow @ Flow::Return(_) => return Ok(flow),
+            }
+        }
+        Ok(Flow::Normal)
+    }
+
+    fn for_loop(
+        &mut self,
+        variable: &str,
+        items: Vec<Value>,
+        body: &[Stmt],
+        env: &Env,
+    ) -> Result<Flow, Error> {
+        for item in items {
+            self.check_interrupt()?;
+            if let Some(turn) = self.loops.last_mut() {
+                turn.turn += 1;
+            }
+            let scope = Scope::new_child(env);
+            scope.borrow_mut().define(variable.to_owned(), item);
+            match self.execute_block(body, &scope)? {
+                Flow::Break => break,
+                Flow::Normal | Flow::Continue => {}
+                flow @ Flow::Return(_) => return Ok(flow),
+            }
+        }
+        Ok(Flow::Normal)
+    }
+
+    // ----- debugging -----
+
+    /// Asks the debugger whether to pause before `statement`, and pauses.
+    fn debug_point(&mut self, statement: &Stmt, env: &Env) -> Result<(), Error> {
+        let line = statement.position.line;
+        let depth = self.frames.len() - 1;
+        let file = self.frames.last_mut().and_then(|frame| {
+            frame.line = line;
+            frame.file.clone()
+        });
+        let Some(debugger) = self.debugger.as_deref_mut() else {
+            return Ok(());
+        };
+        if !debugger.should_pause(line, file.as_deref(), depth) {
+            return Ok(());
+        }
+        let snapshot = Snapshot {
+            line,
+            file: file.map(|file| file.display().to_string()),
+            frames: self
+                .frames
+                .iter()
+                .map(|frame| debug::Frame {
+                    function: frame.name.clone(),
+                    line: frame.line,
+                })
+                .collect(),
+            loops: self.loops.clone(),
+            variables: self.visible_variables(env),
+        };
+        let go_on = match self.debugger.as_deref_mut() {
+            Some(debugger) => debugger.pause(snapshot),
+            None => true,
+        };
+        if go_on {
+            Ok(())
+        } else {
+            Err(Error::without_position(Message::Interrupted))
+        }
+    }
+
+    /// Every variable `env` can see, innermost first; a shadowed name
+    /// appears once. Built-in functions are left out.
+    fn visible_variables(&self, env: &Env) -> Vec<Variable> {
+        const LONGEST: usize = 200;
+        let mut seen = HashSet::new();
+        let mut variables = Vec::new();
+        let mut next = Some(Rc::clone(env));
+        while let Some(scope) = next {
+            if Rc::ptr_eq(&scope, &self.builtins) {
+                break;
+            }
+            let global = Rc::ptr_eq(&scope, &self.globals);
+            let scope = scope.borrow();
+            let mut own: Vec<(&String, &Value)> = scope
+                .own_values()
+                .filter(|(_, value)| !matches!(value, Value::Builtin(_)))
+                .collect();
+            own.sort_by(|a, b| a.0.cmp(b.0));
+            for (name, value) in own {
+                if !seen.insert(name.clone()) {
+                    continue;
+                }
+                let mut text = match value {
+                    Value::String(text) => format!("\"{text}\""),
+                    other => other.display(self.lang).to_string(),
+                };
+                if text.chars().count() > LONGEST {
+                    text = text.chars().take(LONGEST).collect::<String>() + "…";
+                }
+                variables.push(Variable {
+                    name: name.clone(),
+                    value: text,
+                    type_name: value.value_type().name(self.lang).to_owned(),
+                    global,
+                });
+            }
+            next = scope.parent();
+        }
+        variables
     }
 
     // ----- expressions -----
@@ -435,7 +589,13 @@ impl<'io> Interpreter<'io> {
             path: Rc::clone(&module_path),
             key: key.clone(),
         });
+        self.frames.push(CallFrame {
+            name: path.to_owned(),
+            line: 0,
+            file: Some(Rc::clone(&module_path)),
+        });
         let result = self.execute_block(&program.statements, &scope);
+        self.frames.pop();
         self.loading.pop();
         result.map_err(|error| error.in_file(&module_path))?;
 
@@ -487,7 +647,13 @@ impl<'io> Interpreter<'io> {
         }
 
         self.depth += 1;
+        self.frames.push(CallFrame {
+            name: decl.name.clone(),
+            line: 0,
+            file: function.file.clone(),
+        });
         let result = self.execute_block(&decl.body, &scope);
+        self.frames.pop();
         self.depth -= 1;
 
         let result = match &function.file {

@@ -13,6 +13,8 @@ use crate::assistant::{
 };
 use crate::credentials;
 use crate::highlight::{self, DARK};
+use crate::lessons::LESSONS;
+use crate::settings::{AssistantMode, Level};
 use crate::texts::Texts;
 
 const GREEN: Color32 = Color32::from_rgb(0x89, 0xd1, 0x85);
@@ -157,7 +159,9 @@ impl StudioApp {
             name: &name,
             text: &document.text,
         });
-        let system = assistant::system_prompt(self.settings.lang, file);
+        let teacher = (self.settings.assistant_mode == AssistantMode::Teacher)
+            .then_some(self.settings.teacher_level);
+        let system = assistant::system_prompt(self.settings.lang, file, teacher);
         self.chat_error = None;
         self.chat_job = Some(Job::start(
             Request {
@@ -217,6 +221,24 @@ impl StudioApp {
                 }
             });
         });
+        if ready && self.setup.is_none() {
+            ui.horizontal(|ui| {
+                let mode = self.settings.assistant_mode;
+                for (choice, label) in [
+                    (AssistantMode::Assistant, texts.mode_assistant),
+                    (AssistantMode::Teacher, texts.mode_teacher),
+                ] {
+                    if ui.selectable_label(mode == choice, label).clicked() && mode != choice {
+                        self.settings.assistant_mode = choice;
+                        self.settings.save();
+                        self.chat_job = None;
+                        self.chat.clear();
+                        self.chat_error = None;
+                        self.current_lesson = None;
+                    }
+                }
+            });
+        }
         if (ready && self.setup.is_none()) || self.undo.is_some() {
             ui.horizontal_wrapped(|ui| {
                 if ready && self.setup.is_none() {
@@ -405,12 +427,18 @@ impl StudioApp {
         let font_size = self.settings.font_size - 1.0;
         let mut actions = Vec::new();
         let mut suggestion = None;
+        let conversation = !self.chat.is_empty() || self.chat_job.is_some();
         ScrollArea::vertical()
-            .id_salt("chat")
-            .stick_to_bottom(true)
+            .id_salt(("chat", conversation))
+            .stick_to_bottom(conversation)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                if self.chat.is_empty() && self.chat_job.is_none() {
+                if self.chat.is_empty()
+                    && self.chat_job.is_none()
+                    && self.settings.assistant_mode == AssistantMode::Teacher
+                {
+                    suggestion = self.teacher_home(ui);
+                } else if self.chat.is_empty() && self.chat_job.is_none() {
                     ui.label(RichText::new(texts.assistant_intro).weak());
                     ui.add_space(8.0);
                     for prompt in [
@@ -496,6 +524,9 @@ impl StudioApp {
                 .desired_width(f32::INFINITY),
         );
         let mut send = enter && !busy;
+        if self.settings.assistant_mode == AssistantMode::Teacher && !self.chat.is_empty() {
+            self.teacher_buttons(ui, busy);
+        }
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.send_open_file, texts.assistant_include_file);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -517,6 +548,154 @@ impl StudioApp {
             let text = std::mem::take(&mut self.chat_input);
             self.send_chat(text);
         }
+    }
+
+    /// The teacher's start page: the level and the lessons. Returns the
+    /// prompt that starts a lesson, when one is chosen.
+    fn teacher_home(&mut self, ui: &mut egui::Ui) -> Option<String> {
+        let texts = self.texts();
+        let palette = self.palette();
+        let lang = self.settings.lang;
+        ui.label(RichText::new(texts.teacher_intro).weak());
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(texts.teacher_level);
+            for (level, name) in [
+                (Level::Beginner, texts.level_beginner),
+                (Level::Intermediate, texts.level_intermediate),
+                (Level::Advanced, texts.level_advanced),
+            ] {
+                if ui
+                    .selectable_label(self.settings.teacher_level == level, name)
+                    .clicked()
+                {
+                    self.settings.teacher_level = level;
+                    self.settings.save();
+                }
+            }
+        });
+        ui.add_space(6.0);
+        let done = &self.settings.lessons_done;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(texts.teacher_lessons).strong());
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(
+                    RichText::new(
+                        texts
+                            .teacher_progress
+                            .replace("{done}", &done.len().min(LESSONS.len()).to_string())
+                            .replace("{total}", &LESSONS.len().to_string()),
+                    )
+                    .small()
+                    .weak(),
+                );
+            });
+        });
+        ui.add(
+            egui::ProgressBar::new(done.len().min(LESSONS.len()) as f32 / LESSONS.len() as f32)
+                .desired_height(6.0)
+                .fill(palette.accent),
+        );
+        ui.add_space(4.0);
+        let mut chosen = None;
+        for (index, lesson) in LESSONS.iter().enumerate() {
+            let number = index + 1;
+            let finished = done.contains(&number);
+            let mark = if finished { "✔" } else { "  " };
+            let text = RichText::new(format!("{mark} {number}. {}", lesson.title(lang)));
+            let text = if finished {
+                text.color(palette.success)
+            } else {
+                text
+            };
+            if ui
+                .add(egui::Button::new(text).min_size(egui::vec2(ui.available_width(), 26.0)))
+                .clicked()
+            {
+                chosen = Some(index);
+            }
+        }
+        let index = chosen?;
+        self.current_lesson = Some(index + 1);
+        let lesson = &LESSONS[index];
+        Some(
+            texts
+                .teacher_start_lesson
+                .replace("{number}", &(index + 1).to_string())
+                .replace("{title}", lesson.title(lang))
+                .replace("{topics}", lesson.topics),
+        )
+    }
+
+    /// Review, hint and lesson buttons over the message box.
+    fn teacher_buttons(&mut self, ui: &mut egui::Ui, busy: bool) {
+        let texts = self.texts();
+        let mut prompt = None;
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(!busy, egui::Button::new(texts.teacher_review))
+                .on_hover_text(texts.teacher_review_hint)
+                .clicked()
+            {
+                let output = self.last_run_output();
+                let output = if output.trim().is_empty() {
+                    texts.teacher_not_run.to_owned()
+                } else {
+                    output
+                };
+                self.send_open_file = true;
+                prompt = Some(texts.teacher_review_prompt.replace("{output}", &output));
+            }
+            if ui
+                .add_enabled(!busy, egui::Button::new(texts.teacher_hint))
+                .clicked()
+            {
+                prompt = Some(texts.teacher_hint_prompt.to_owned());
+            }
+            if let Some(number) = self.current_lesson {
+                if ui
+                    .add_enabled(!busy, egui::Button::new(texts.teacher_done))
+                    .clicked()
+                {
+                    if !self.settings.lessons_done.contains(&number) {
+                        self.settings.lessons_done.push(number);
+                        self.settings.save();
+                    }
+                    prompt = Some(
+                        texts
+                            .teacher_next_prompt
+                            .replace("{number}", &number.to_string()),
+                    );
+                    self.current_lesson = (number < LESSONS.len()).then_some(number + 1);
+                }
+            }
+            if ui.button(texts.teacher_lessons_button).clicked() {
+                self.chat_job = None;
+                self.chat.clear();
+                self.chat_error = None;
+                self.current_lesson = None;
+            }
+        });
+        if let Some(prompt) = prompt {
+            self.send_chat(prompt);
+        }
+    }
+
+    /// What the last program run printed, its errors included, shortened.
+    fn last_run_output(&self) -> String {
+        let start = self
+            .terminal
+            .iter()
+            .rposition(|(text, kind)| *kind == super::LineKind::Info && text.starts_with('▶'))
+            .map_or(0, |index| index + 1);
+        let output: String = self.terminal[start..]
+            .iter()
+            .filter(|(_, kind)| matches!(kind, super::LineKind::Output | super::LineKind::Error))
+            .map(|(text, _)| text.as_str())
+            .collect();
+        let output = output.trim_end();
+        let count = output.chars().count();
+        output.chars().skip(count.saturating_sub(1500)).collect()
     }
 
     fn apply(&mut self, context: &egui::Context, action: CodeAction) {
@@ -661,7 +840,7 @@ fn show_answer(
                                     &code,
                                     FontId::monospace(font_size),
                                     &DARK,
-                                    None,
+                                    &highlight::Marks::default(),
                                 );
                                 ui.add(egui::Label::new(job).selectable(true).extend());
                             });

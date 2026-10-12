@@ -10,12 +10,16 @@
 mod app;
 mod assistant;
 mod auth;
+mod completion;
 mod credentials;
 mod files;
 mod highlight;
+mod lessons;
 mod runner;
 mod settings;
+mod shortcuts;
 mod texts;
+mod theme;
 mod update;
 mod workspace;
 

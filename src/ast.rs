@@ -77,8 +77,15 @@ pub struct FunctionDecl {
     pub body: Vec<Stmt>,
 }
 
+/// A statement and where it starts, for the debugger.
 #[derive(Debug, PartialEq)]
-pub enum Stmt {
+pub struct Stmt {
+    pub position: Position,
+    pub kind: StmtKind,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum StmtKind {
     Expression(Expr),
     Let {
         name: String,
