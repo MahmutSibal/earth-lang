@@ -4,6 +4,7 @@
 //! names in every supported human language live in `keywords`.
 
 pub mod ast;
+pub mod debug;
 pub mod error;
 pub mod interpreter;
 pub mod keywords;

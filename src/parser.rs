@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::ast::{BinaryOp, Expr, FunctionDecl, LogicalOp, Program, Stmt, UnaryOp};
+use crate::ast::{BinaryOp, Expr, FunctionDecl, LogicalOp, Program, Stmt, StmtKind, UnaryOp};
 use crate::error::{Error, Position};
 use crate::keywords::Keyword;
 use crate::lexer::{Token, TokenKind};
@@ -37,6 +37,12 @@ impl Parser<'_> {
     // ----- statements -----
 
     fn statement(&mut self) -> Result<Stmt, Error> {
+        let position = self.peek().position;
+        let kind = self.statement_kind()?;
+        Ok(Stmt { position, kind })
+    }
+
+    fn statement_kind(&mut self) -> Result<StmtKind, Error> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Keyword(Keyword::Let) => self.let_statement(),
@@ -48,7 +54,7 @@ impl Parser<'_> {
             TokenKind::Keyword(Keyword::Import) => {
                 let path_token = self.advance().clone();
                 match path_token.kind {
-                    TokenKind::String(path) => Ok(Stmt::Import {
+                    TokenKind::String(path) => Ok(StmtKind::Import {
                         path,
                         position: token.position,
                     }),
@@ -61,7 +67,7 @@ impl Parser<'_> {
                     )),
                 }
             }
-            TokenKind::Keyword(Keyword::Throw) => Ok(Stmt::Throw {
+            TokenKind::Keyword(Keyword::Throw) => Ok(StmtKind::Throw {
                 value: self.expression()?,
                 position: token.position,
             }),
@@ -73,9 +79,9 @@ impl Parser<'_> {
                     ));
                 }
                 if self.at_statement_end() {
-                    Ok(Stmt::Return(None))
+                    Ok(StmtKind::Return(None))
                 } else {
-                    Ok(Stmt::Return(Some(self.expression()?)))
+                    Ok(StmtKind::Return(Some(self.expression()?)))
                 }
             }
             TokenKind::Keyword(keyword @ (Keyword::Break | Keyword::Continue)) => {
@@ -83,9 +89,9 @@ impl Parser<'_> {
                     return Err(Error::at(token.position, Message::OutsideLoop(keyword)));
                 }
                 Ok(if keyword == Keyword::Break {
-                    Stmt::Break
+                    StmtKind::Break
                 } else {
-                    Stmt::Continue
+                    StmtKind::Continue
                 })
             }
             _ => {
@@ -95,14 +101,14 @@ impl Parser<'_> {
         }
     }
 
-    fn let_statement(&mut self) -> Result<Stmt, Error> {
+    fn let_statement(&mut self) -> Result<StmtKind, Error> {
         let name = self.identifier(Expected::VariableName)?;
         self.expect(TokenKind::Equal)?;
         let value = self.expression()?;
-        Ok(Stmt::Let { name, value })
+        Ok(StmtKind::Let { name, value })
     }
 
-    fn if_statement(&mut self) -> Result<Stmt, Error> {
+    fn if_statement(&mut self) -> Result<StmtKind, Error> {
         let condition = self.expression()?;
         let then_branch = self.block()?;
 
@@ -110,7 +116,9 @@ impl Parser<'_> {
         self.skip_separators();
         let else_branch = if self.eat(&TokenKind::Keyword(Keyword::Else)) {
             if self.eat(&TokenKind::Keyword(Keyword::If)) {
-                Some(vec![self.if_statement()?])
+                let position = self.tokens[self.position - 1].position;
+                let kind = self.if_statement()?;
+                Some(vec![Stmt { position, kind }])
             } else {
                 Some(self.block()?)
             }
@@ -119,14 +127,14 @@ impl Parser<'_> {
             None
         };
 
-        Ok(Stmt::If {
+        Ok(StmtKind::If {
             condition,
             then_branch,
             else_branch,
         })
     }
 
-    fn try_statement(&mut self) -> Result<Stmt, Error> {
+    fn try_statement(&mut self) -> Result<StmtKind, Error> {
         let body = self.block()?;
         self.skip_separators();
         self.expect(TokenKind::Keyword(Keyword::Catch))?;
@@ -139,25 +147,25 @@ impl Parser<'_> {
             _ => None,
         };
         let handler = self.block()?;
-        Ok(Stmt::Try {
+        Ok(StmtKind::Try {
             body,
             variable,
             handler,
         })
     }
 
-    fn while_statement(&mut self) -> Result<Stmt, Error> {
+    fn while_statement(&mut self) -> Result<StmtKind, Error> {
         let condition = self.expression()?;
         let body = self.loop_body()?;
-        Ok(Stmt::While { condition, body })
+        Ok(StmtKind::While { condition, body })
     }
 
-    fn for_statement(&mut self, position: Position) -> Result<Stmt, Error> {
+    fn for_statement(&mut self, position: Position) -> Result<StmtKind, Error> {
         let variable = self.identifier(Expected::LoopVariable)?;
         self.expect(TokenKind::Keyword(Keyword::In))?;
         let iterable = self.expression()?;
         let body = self.loop_body()?;
-        Ok(Stmt::For {
+        Ok(StmtKind::For {
             variable,
             iterable,
             body,
@@ -172,7 +180,7 @@ impl Parser<'_> {
         body
     }
 
-    fn function_statement(&mut self) -> Result<Stmt, Error> {
+    fn function_statement(&mut self) -> Result<StmtKind, Error> {
         let name = self.identifier(Expected::FunctionName)?;
         self.expect(TokenKind::LeftParen)?;
         let mut parameters = Vec::new();
@@ -202,27 +210,27 @@ impl Parser<'_> {
         self.function_depth -= 1;
         self.loop_depth = outer_loop_depth;
 
-        Ok(Stmt::Function(Rc::new(FunctionDecl {
+        Ok(StmtKind::Function(Rc::new(FunctionDecl {
             name,
             parameters,
             body: body?,
         })))
     }
 
-    fn expression_statement(&mut self) -> Result<Stmt, Error> {
+    fn expression_statement(&mut self) -> Result<StmtKind, Error> {
         let expression = self.expression()?;
         if !self.check(&TokenKind::Equal) {
-            return Ok(Stmt::Expression(expression));
+            return Ok(StmtKind::Expression(expression));
         }
         let position = self.advance().position;
         let value = self.expression()?;
         match expression {
-            Expr::Variable { name, .. } => Ok(Stmt::Assign {
+            Expr::Variable { name, .. } => Ok(StmtKind::Assign {
                 name,
                 value,
                 position,
             }),
-            Expr::Index { target, index, .. } => Ok(Stmt::IndexAssign {
+            Expr::Index { target, index, .. } => Ok(StmtKind::IndexAssign {
                 target: *target,
                 index: *index,
                 value,
@@ -536,7 +544,7 @@ impl Parser<'_> {
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::ast::{BinaryOp, Expr, Stmt};
+    use crate::ast::{BinaryOp, Expr, Stmt, StmtKind};
     use crate::error::{Error, Position};
     use crate::keywords::Lang;
     use crate::lexer::lex;
@@ -548,7 +556,7 @@ mod tests {
     #[test]
     fn respects_operator_precedence() {
         let statements = parse_source("1 + 2 * 3").unwrap();
-        let Stmt::Expression(Expr::Binary { op, right, .. }) = &statements[0] else {
+        let StmtKind::Expression(Expr::Binary { op, right, .. }) = &statements[0].kind else {
             panic!("expected a binary expression");
         };
         assert_eq!(*op, BinaryOp::Add);
@@ -565,8 +573,8 @@ mod tests {
     fn parses_else_on_the_next_line() {
         let statements = parse_source("eğer doğru {\n}\ndeğilse {\n}").unwrap();
         assert!(matches!(
-            statements[0],
-            Stmt::If {
+            statements[0].kind,
+            StmtKind::If {
                 else_branch: Some(_),
                 ..
             }
