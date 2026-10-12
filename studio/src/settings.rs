@@ -3,6 +3,7 @@
 //! `~/Library/Application Support/Earth Studio` on macOS and
 //! `~/.config/earth-studio` elsewhere.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -13,6 +14,65 @@ use crate::auth::{Profile, Provider};
 
 pub const MIN_FONT_SIZE: f32 = 11.0;
 pub const MAX_FONT_SIZE: f32 = 24.0;
+pub const MIN_UI_SCALE: f32 = 0.8;
+pub const MAX_UI_SCALE: f32 = 1.6;
+
+/// Which side of the window a panel is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    Left,
+    Right,
+}
+
+impl Side {
+    fn id(self) -> &'static str {
+        match self {
+            Side::Left => "left",
+            Side::Right => "right",
+        }
+    }
+
+    fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "left" => Some(Side::Left),
+            "right" => Some(Side::Right),
+            _ => None,
+        }
+    }
+}
+
+/// How the assistant talks to the user.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssistantMode {
+    /// Answers questions and writes code.
+    Assistant,
+    /// Teaches: explains, gives hints and exercises, checks the user's work.
+    Teacher,
+}
+
+/// How much the teacher assumes the user knows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Level {
+    Beginner,
+    Intermediate,
+    Advanced,
+}
+
+impl Level {
+    pub const ALL: [Level; 3] = [Level::Beginner, Level::Intermediate, Level::Advanced];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Level::Beginner => "beginner",
+            Level::Intermediate => "intermediate",
+            Level::Advanced => "advanced",
+        }
+    }
+
+    fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|level| level.id() == id)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
@@ -27,6 +87,18 @@ pub struct Settings {
     pub ai_base_url: String,
     pub ai_model: String,
     pub assistant_open: bool,
+    /// `theme::ThemeName` id.
+    pub theme: String,
+    /// Scales the whole interface.
+    pub ui_scale: f32,
+    pub explorer_side: Side,
+    pub assistant_side: Side,
+    /// Shortcuts the user changed: action id → shortcut text.
+    pub shortcuts: BTreeMap<String, String>,
+    pub assistant_mode: AssistantMode,
+    pub teacher_level: Level,
+    /// Lessons the user finished with the teacher, by number.
+    pub lessons_done: Vec<usize>,
 }
 
 impl Default for Settings {
@@ -40,6 +112,14 @@ impl Default for Settings {
             ai_base_url: String::new(),
             ai_model: String::new(),
             assistant_open: false,
+            theme: "midnight".to_owned(),
+            ui_scale: 1.0,
+            explorer_side: Side::Left,
+            assistant_side: Side::Right,
+            shortcuts: BTreeMap::new(),
+            assistant_mode: AssistantMode::Assistant,
+            teacher_level: Level::Beginner,
+            lessons_done: Vec::new(),
         }
     }
 }
@@ -93,6 +173,48 @@ impl Settings {
             assistant_open: value["assistant_open"]
                 .as_bool()
                 .unwrap_or(defaults.assistant_open),
+            theme: value["theme"]
+                .as_str()
+                .filter(|id| crate::theme::ThemeName::from_id(id).is_some())
+                .map_or(defaults.theme, str::to_owned),
+            ui_scale: value["ui_scale"]
+                .as_f64()
+                .map(|scale| (scale as f32).clamp(MIN_UI_SCALE, MAX_UI_SCALE))
+                .unwrap_or(defaults.ui_scale),
+            explorer_side: value["explorer_side"]
+                .as_str()
+                .and_then(Side::from_id)
+                .unwrap_or(defaults.explorer_side),
+            assistant_side: value["assistant_side"]
+                .as_str()
+                .and_then(Side::from_id)
+                .unwrap_or(defaults.assistant_side),
+            shortcuts: value["shortcuts"]
+                .as_object()
+                .map(|map| {
+                    map.iter()
+                        .filter_map(|(action, shortcut)| {
+                            Some((action.clone(), shortcut.as_str()?.to_owned()))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            assistant_mode: match value["assistant_mode"].as_str() {
+                Some("teacher") => AssistantMode::Teacher,
+                _ => AssistantMode::Assistant,
+            },
+            teacher_level: value["teacher_level"]
+                .as_str()
+                .and_then(Level::from_id)
+                .unwrap_or(defaults.teacher_level),
+            lessons_done: value["lessons_done"]
+                .as_array()
+                .map(|done| {
+                    done.iter()
+                        .filter_map(|n| n.as_u64().map(|n| n as usize))
+                        .collect()
+                })
+                .unwrap_or_default(),
             profile: provider.map(|provider| Profile {
                 provider,
                 name: text(&profile["name"]),
@@ -114,6 +236,17 @@ impl Settings {
             "ai_base_url": self.ai_base_url,
             "ai_model": self.ai_model,
             "assistant_open": self.assistant_open,
+            "theme": self.theme,
+            "ui_scale": self.ui_scale,
+            "explorer_side": self.explorer_side.id(),
+            "assistant_side": self.assistant_side.id(),
+            "shortcuts": self.shortcuts,
+            "assistant_mode": match self.assistant_mode {
+                AssistantMode::Assistant => "assistant",
+                AssistantMode::Teacher => "teacher",
+            },
+            "teacher_level": self.teacher_level.id(),
+            "lessons_done": self.lessons_done,
             "profile": self.profile.as_ref().map(|profile| json!({
                 "provider": match profile.provider {
                     Provider::Google => "google",
@@ -163,6 +296,14 @@ mod tests {
             ai_service: "gemini".to_owned(),
             ai_base_url: String::new(),
             ai_model: "gemini-flash".to_owned(),
+            theme: "light".to_owned(),
+            ui_scale: 1.25,
+            explorer_side: Side::Right,
+            assistant_side: Side::Left,
+            shortcuts: [("run".to_owned(), "Ctrl+R".to_owned())].into(),
+            assistant_mode: AssistantMode::Teacher,
+            teacher_level: Level::Intermediate,
+            lessons_done: vec![1, 3],
             assistant_open: true,
             profile: Some(Profile {
                 provider: Provider::GitHub,

@@ -661,7 +661,7 @@ fn show_answer(
                                     &code,
                                     FontId::monospace(font_size),
                                     &DARK,
-                                    None,
+                                    &highlight::Marks::default(),
                                 );
                                 ui.add(egui::Label::new(job).selectable(true).extend());
                             });
