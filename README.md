@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/MahmutSibal/earth-lang/releases/latest"><img alt="Son sürüm" src="https://img.shields.io/github/v/release/MahmutSibal/earth-lang?label=s%C3%BCr%C3%BCm"></a>
-  <a href="https://github.com/MahmutSibal/earth-lang/releases"><img alt="İndirme" src="https://img.shields.io/badge/indirme-108-blue"></a>
+  <a href="https://github.com/MahmutSibal/earth-lang/releases"><img alt="İndirme" src="https://img.shields.io/badge/indirme-108-green"></a>
   <a href="LICENSE"><img alt="Lisans: MIT" src="https://img.shields.io/badge/lisans-MIT-blue"></a>
 </p>
 
