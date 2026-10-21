@@ -1,13 +1,89 @@
 {
   "name": "earth-lang",
-  "displayName": "Earth",
-  "description": "Earth programlama dili için sözdizimi renklendirme (Türkçe ve İngilizce)",
-  "version": "0.3.0",
+  "displayName": "Earth Language - Turkish Programming",
+  "description": "Türkçe ve İngilizce yazılabilen Earth programlama dili için VS Code desteği",
+  "version": "0.4.2",
   "publisher": "mahmutsibal",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MahmutSibal/earth-lang.git",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/MahmutSibal/earth-lang/issues"
+  },
+  "homepage": "https://github.com/MahmutSibal/earth-lang#readme",
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:earth",
+    "onCommand:earth.runFile",
+    "onCommand:earth.openInStudio",
+    "onCommand:earth.openSettings"
+  ],
+  "keywords": [
+    "earth",
+    "turkish",
+    "programming language",
+    "beginner",
+    "education"
+  ],
   "engines": { "vscode": "^1.60.0" },
   "categories": ["Programming Languages"],
   "contributes": {
+    "commands": [
+      {
+        "command": "earth.runFile",
+        "title": "Earth: Dosyayı çalıştır",
+        "category": "Earth"
+      },
+      {
+        "command": "earth.openInStudio",
+        "title": "Earth: Earth Studio'da aç",
+        "category": "Earth"
+      },
+      {
+        "command": "earth.openSettings",
+        "title": "Earth: Ayarları aç",
+        "category": "Earth"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "earth.runFile",
+          "when": "editorLangId == earth",
+          "group": "navigation@1"
+        },
+        {
+          "command": "earth.openInStudio",
+          "when": "editorLangId == earth",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "earth.runFile",
+        "key": "f5",
+        "when": "editorLangId == earth"
+      }
+    ],
+    "configuration": {
+      "title": "Earth",
+      "properties": {
+        "earth.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "earth komutunun yolu. Boş bırakılırsa PATH'te aranır."
+        },
+        "earth.studioPath": {
+          "type": "string",
+          "default": "",
+          "description": "Earth Studio çalıştırılabilir dosyasının yolu. Boş bırakılırsa varsayılan kurulum konumu aranır."
+        }
+      }
+    },
     "languages": [
       {
         "id": "earth",

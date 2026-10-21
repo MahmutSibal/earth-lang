@@ -1118,6 +1118,15 @@ Releases sayfasındaki `earth-studio-linux-x64.tar.gz` ya da
 kullanılabilir. Bu sistemlerde Studio yeni sürümleri haber verir ve indirme sayfasına
 yönlendirir.
 
+### VS Code entegrasyonu
+
+VS Code kullanıyorsan [Earth eklentisini](https://marketplace.visualstudio.com/items?itemName=mahmutsibal.earth-lang)
+kurarak `.earth` dosyalarını VS Code içinde renklendirebilir, **F5** ile
+çalıştırabilir ve sağ tık menüsünden Earth Studio'da açabilirsin. Eklentinin
+`earth` komutunu bulabilmesi için kurulum sırasında **earth komutunu PATH'e ekle**
+seçeneğini işaretle. Ayrıntılar:
+[editors/vscode/README.md](editors/vscode/README.md).
+
 ## Sık sorulan sorular
 
 **Windows "Windows bilgisayarınızı korudu" / "bilinmeyen yayımcı" diyor.**
