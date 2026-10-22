@@ -14,8 +14,23 @@ permissions:
   contents: write
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate release metadata
+        run: python .github/scripts/validate-release.py "${{ github.ref_name }}"
+
   windows:
+    needs: preflight
     runs-on: windows-latest
+    permissions:
+      contents: read
     env:
       # Signing runs only once the secrets described in docs/imzalama.md exist.
       CAN_SIGN: ${{ secrets.AZURE_CLIENT_ID != '' }}
@@ -83,6 +98,7 @@ jobs:
             earth-cli-windows-x64.exe
 
   unix:
+    needs: preflight
     strategy:
       matrix:
         include:
@@ -93,6 +109,8 @@ jobs:
             archive: earth-studio-macos-arm64.tar.gz
             cli_archive: earth-cli-macos-arm64.tar.gz
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -119,12 +137,29 @@ jobs:
   release:
     needs: [windows, unix]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
-      - name: Checksums
-        run: sha256sum EarthStudio-Kurulum.exe earth-cli-* earth-studio-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Verify assets and generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=(
+            EarthStudio-Kurulum.exe
+            earth-cli-windows-x64.exe
+            earth-cli-linux-x64.tar.gz
+            earth-cli-macos-arm64.tar.gz
+            earth-studio-linux-x64.tar.gz
+            earth-studio-macos-arm64.tar.gz
+          )
+          for asset in "${assets[@]}"; do
+            test -f "$asset" || { echo "Missing release asset: $asset" >&2; exit 1; }
+          done
+          sha256sum "${assets[@]}" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |

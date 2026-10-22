@@ -1253,6 +1253,13 @@ earth-lang/
    CLI arşivlerini ve `SHA256SUMS.txt`'yi Releases sayfasına ekler.
 4. Kullanıcıların Earth Studio'su yeni sürümü kendiliğinden bulur ve kurar.
 
+Workflow, etiket gönderilmeden önce `Cargo.toml` ile `studio/Cargo.toml`
+sürümlerinin etiketiyle aynı olduğunu ve VS Code eklentisinin geçerli bir
+semver kullandığını doğrular. Yayın aşamasında beklenen altı dosyanın tamamı
+kontrol edilir; eksik dosya varsa release oluşturulmaz. VS Code eklentisi
+`editors/vscode/package.json` içindeki bağımsız sürümünü korur ve CLI/Studio
+release etiketiyle aynı olmak zorunda değildir.
+
 GitHub Actions kullanılamıyorsa Windows kurulum dosyası Linux'ta da üretilebilir
 (MinGW-w64, Wine ve Wine altında kurulu
 [Inno Setup](https://jrsoftware.org/isinfo.php) gerekir):
