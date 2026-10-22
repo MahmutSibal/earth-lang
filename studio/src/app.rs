@@ -538,6 +538,7 @@ impl StudioApp {
         for event in self.runner.poll() {
             match event {
                 Event::Output(text) => self.write_terminal(text, LineKind::Output),
+                Event::ErrorOutput(text) => self.write_terminal(text, LineKind::Error),
                 Event::Value(text) => self.write_terminal(format!("{text}\n"), LineKind::Output),
                 Event::WaitingForInput => {
                     self.waiting_for_input = true;
