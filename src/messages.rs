@@ -476,8 +476,8 @@ pub mod cli {
 
     pub fn usage(lang: Lang) -> &'static str {
         match lang {
-            Lang::Tr => "Kullanım: earth [--dil tr|en] [kaynak-dosyası.earth]",
-            Lang::En => "Usage: earth [--lang tr|en] [source-file.earth]",
+            Lang::Tr => "Kullanım: earth [--dil tr|en] [--denetle] [kaynak-dosyası.earth]",
+            Lang::En => "Usage: earth [--lang tr|en] [--check] [source-file.earth]",
         }
     }
 
@@ -485,11 +485,13 @@ pub mod cli {
         match lang {
             Lang::Tr => {
                 "Dosya verilmezse etkileşimli kabuk (REPL) açılır.\n\
-                 Çıktı dili programın anahtar kelimelerinden algılanır; --dil ile seçilebilir."
+                 Çıktı dili programın anahtar kelimelerinden algılanır; --dil ile seçilebilir.\n\
+                 --denetle (--check) dosyayı çalıştırmadan sözdizimini denetler."
             }
             Lang::En => {
                 "Without a file, an interactive shell (REPL) starts.\n\
-                 The output language is detected from the program's keywords; --lang overrides it."
+                 The output language is detected from the program's keywords; --lang overrides it.\n\
+                 --check validates a file's syntax without running it."
             }
         }
     }

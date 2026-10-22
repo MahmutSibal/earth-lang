@@ -23,6 +23,7 @@ fn main() {
 struct Options {
     lang: Option<Lang>,
     path: Option<String>,
+    check: bool,
 }
 
 fn start() -> i32 {
@@ -31,9 +32,13 @@ fn start() -> i32 {
         Ok(None) => return 0,
         Err(code) => return code,
     };
+    if options.check && options.path.is_none() {
+        eprintln!("{}", cli::usage(options.lang.unwrap_or_default()));
+        return 2;
+    }
     match options.path {
         Some(path) => {
-            let code = run_file(&path, options.lang);
+            let code = run_file(&path, options.lang, options.check);
             if owns_console() {
                 // Opened by double-clicking a file: keep the window open so
                 // the output can be read.
@@ -73,6 +78,7 @@ fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Option<Opt
     let mut options = Options {
         lang: None,
         path: None,
+        check: false,
     };
     let mut arguments = arguments.peekable();
     while let Some(argument) = arguments.next() {
@@ -88,6 +94,9 @@ fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Option<Opt
             "-v" | "--version" | "--sürüm" | "--surum" => {
                 println!("Earth {}", env!("CARGO_PKG_VERSION"));
                 return Ok(None);
+            }
+            "--check" | "--denetle" => {
+                options.check = true;
             }
             "--dil" | "--lang" => {
                 let Some(code) = arguments.next() else {
@@ -114,7 +123,7 @@ fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Option<Opt
     Ok(Some(options))
 }
 
-fn run_file(path: &str, lang: Option<Lang>) -> i32 {
+fn run_file(path: &str, lang: Option<Lang>, check: bool) -> i32 {
     let source = match fs::read_to_string(path) {
         Ok(source) => source,
         Err(error) => {
@@ -125,9 +134,12 @@ fn run_file(path: &str, lang: Option<Lang>) -> i32 {
     };
     let lang = lang.unwrap_or_else(|| earth::detect_language(&source));
 
-    let mut stdout = io::stdout().lock();
-    let mut stdin = io::stdin().lock();
     let result = earth::parse(&source).and_then(|program| {
+        if check {
+            return Ok(None);
+        }
+        let mut stdout = io::stdout().lock();
+        let mut stdin = io::stdin().lock();
         let mut interpreter = Interpreter::new(&mut stdout, &mut stdin, lang);
         if let Some(directory) = Path::new(path).parent() {
             interpreter.set_base_dir(directory);
