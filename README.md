@@ -395,6 +395,7 @@ gelir) her yeni Komut İstemi ya da PowerShell penceresinde kullanılabilir:
 |---|---|
 | `earth` | Etkileşimli kabuğu açar (Python'daki gibi). Satır satır komut yaz, sonucu hemen gör; çıkmak için `çık`. |
 | `earth dosya.earth` | Dosyayı çalıştırır. Hata varsa satırı ve yerini gösterir, çıkış kodu `1` olur. |
+| `earth --check dosya.earth` | Dosyayı çalıştırmadan sözdizimini denetler; hatada çıkış kodu `1` olur. Türkçesi `--denetle`dir. |
 | `earth --dil en dosya.earth` | Çıktı ve hata dilini seçer (`tr` / `en`). Seçilmezse programın dilinden anlaşılır. |
 | `earth --sürüm`, `earth --yardım` | Sürümü ya da yardımı gösterir. |
 
