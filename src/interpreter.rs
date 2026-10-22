@@ -762,6 +762,7 @@ impl<'io> Interpreter<'io> {
             }
             (BinaryOp::Divide, Number(a), Number(b)) => Number(a / b),
             (BinaryOp::Remainder, Number(a), Number(b)) => Number(a % b),
+            (BinaryOp::Power, Number(a), Number(b)) => Number(a.powf(*b)),
 
             (BinaryOp::Less, Number(a), Number(b)) => Value::Bool(a < b),
             (BinaryOp::LessEqual, Number(a), Number(b)) => Value::Bool(a <= b),
@@ -823,6 +824,7 @@ fn symbol(op: BinaryOp) -> &'static str {
         BinaryOp::Multiply => "*",
         BinaryOp::Divide => "/",
         BinaryOp::Remainder => "%",
+        BinaryOp::Power => "**",
         BinaryOp::Equal => "==",
         BinaryOp::NotEqual => "!=",
         BinaryOp::Less => "<",

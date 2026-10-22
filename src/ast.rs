@@ -15,6 +15,7 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Remainder,
+    Power,
     Equal,
     NotEqual,
     Less,

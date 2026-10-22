@@ -30,7 +30,7 @@ grammar = {
     {"name": "keyword.operator.word.earth", "match": alt(operators)},
     {"name": "support.function.builtin.earth", "match": alt(builtins)},
     {"name": "constant.numeric.earth", "match": "(?<![\\p{L}\\p{N}_])\\d+(?:\\.\\d+)?"},
-    {"name": "keyword.operator.earth", "match": "==|!=|<=|>=|\\+=|-=|\\*=|/=|%=|[-+*/%<>=]"},
+    {"name": "keyword.operator.earth", "match": "\\*\\*|==|!=|<=|>=|\\+=|-=|\\*=|/=|%=|[-+*/%<>=]"},
     {"match": "([\\p{L}_][\\p{L}\\p{N}_]*)\\s*(?=\\()", "captures": {"1": {"name": "entity.name.function.call.earth"}}}
   ]
 }
