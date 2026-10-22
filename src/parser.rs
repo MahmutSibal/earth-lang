@@ -117,13 +117,19 @@ impl Parser<'_> {
         let save = self.position;
         self.skip_separators();
         let else_branch = if self.eat(&TokenKind::Keyword(Keyword::Else)) {
-            if self.eat(&TokenKind::Keyword(Keyword::If)) {
+            if self.eat(&TokenKind::Keyword(Keyword::If))
+                || self.eat(&TokenKind::Keyword(Keyword::ElseIf))
+            {
                 let position = self.tokens[self.position - 1].position;
                 let kind = self.if_statement()?;
                 Some(vec![Stmt { position, kind }])
             } else {
                 Some(self.block()?)
             }
+        } else if self.eat(&TokenKind::Keyword(Keyword::ElseIf)) {
+            let position = self.tokens[self.position - 1].position;
+            let kind = self.if_statement()?;
+            Some(vec![Stmt { position, kind }])
         } else {
             self.position = save;
             None
@@ -642,6 +648,19 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_chained_elif_without_else() {
+        let statements = parse_source("if false { }\nelif false { }\nelif true { }\n").unwrap();
+        assert!(matches!(
+            statements[0].kind,
+            StmtKind::If {
+                else_branch: Some(_),
+                ..
+            }
+        ));
+        assert_eq!(statements.len(), 1);
     }
 
     #[test]

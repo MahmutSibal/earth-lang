@@ -418,6 +418,24 @@ mod tests {
     }
 
     #[test]
+    fn lexes_elif_aliases() {
+        assert_eq!(
+            kinds("elif doğru { } değilse_eğer yanlış { }"),
+            vec![
+                TokenKind::Keyword(Keyword::ElseIf),
+                TokenKind::Keyword(Keyword::True),
+                TokenKind::LeftBrace,
+                TokenKind::RightBrace,
+                TokenKind::Keyword(Keyword::ElseIf),
+                TokenKind::Keyword(Keyword::False),
+                TokenKind::LeftBrace,
+                TokenKind::RightBrace,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
     fn ignores_newlines_inside_brackets() {
         assert_eq!(
             kinds("[1,\n2]"),

@@ -31,7 +31,7 @@
     },
     {
       "name": "keyword.control.earth",
-      "match": "(?<![\\p{L}\\p{N}_])(?:içe_aktar|ice_aktar|değişken|degisken|continue|değilse|degilse|içinde|icinde|döndür|dondur|return|yakala|fırlat|firlat|import|while|break|devam|catch|throw|eğer|eger|else|iken|dene|let|her|for|kır|kir|try|if|in)(?![\\p{L}\\p{N}_])"
+      "match": "(?<![\\p{L}\\p{N}_])(?:değilse_eğer|degilse_eger|içe_aktar|ice_aktar|değişken|degisken|continue|değilse|degilse|içinde|icinde|döndür|dondur|return|yakala|fırlat|firlat|import|while|break|devam|catch|throw|elif|eğer|eger|else|iken|dene|let|her|for|kır|kir|try|if|in)(?![\\p{L}\\p{N}_])"
     },
     {
       "name": "constant.language.earth",

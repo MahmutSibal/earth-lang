@@ -620,9 +620,9 @@ değişken puan = 72
 
 eğer puan >= 85 {
     yaz("Pekiyi")
-} değilse eğer puan >= 70 {
+} elif puan >= 70 {
     yaz("İyi")
-} değilse eğer puan >= 50 {
+} elif puan >= 50 {
     yaz("Geçer")
 } değilse {
     yaz("Kaldı")
@@ -634,6 +634,8 @@ eğer puan >= 85 {
 ```
 
 `değilse`, kapanan `}` ile aynı satırda ya da bir alt satırda başlayabilir.
+`elif` (Türkçesi `değilse_eğer`) kısa yazımla bir sonraki koşulu başlatır;
+`değilse eğer` biçimi de geçerlidir.
 Kısa koşullar tek satırda yazılabilir: `eğer x < 0 { x = -x }`.
 
 ### 7. Döngüler

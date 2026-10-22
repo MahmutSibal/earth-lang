@@ -182,6 +182,20 @@ yaz(toplam, liste, sözlük[\"sayı\"])";
     }
 
     #[test]
+    fn supports_elif_aliases() {
+        assert_eq!(
+            run("değişken x = 2\nif x == 1 { print(\"one\") } elif x == 2 { print(\"two\") } else { print(\"other\") }")
+                .unwrap(),
+            "two\n"
+        );
+        assert_eq!(
+            run("değişken x = 3\neğer x == 1 { yaz(\"bir\") } değilse_eğer x == 2 { yaz(\"iki\") } değilse { yaz(\"diğer\") }")
+                .unwrap(),
+            "diğer\n"
+        );
+    }
+
+    #[test]
     fn scopes_block_variables() {
         let error = run_error("eğer doğru { değişken iç = 1 }\nyaz(iç)");
         assert_eq!(error.position, Some(Position::new(2, 5)));
