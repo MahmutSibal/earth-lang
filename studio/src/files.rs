@@ -73,9 +73,15 @@ pub fn with_earth_extension(name: &str) -> String {
     }
 }
 
+pub fn is_python(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("py"))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{scan, with_earth_extension};
+    use super::{is_python, scan, with_earth_extension};
+    use std::path::Path;
 
     #[test]
     fn lists_folders_first_and_skips_hidden_entries() {
@@ -96,5 +102,12 @@ mod tests {
     fn adds_the_earth_extension() {
         assert_eq!(with_earth_extension(" oyun "), "oyun.earth");
         assert_eq!(with_earth_extension("notlar.txt"), "notlar.txt");
+    }
+
+    #[test]
+    fn recognizes_python_files_case_insensitively() {
+        assert!(is_python(Path::new("main.py")));
+        assert!(is_python(Path::new("main.PY")));
+        assert!(!is_python(Path::new("main.earth")));
     }
 }

@@ -99,6 +99,8 @@ pub struct Settings {
     pub teacher_level: Level,
     /// Lessons the user finished with the teacher, by number.
     pub lessons_done: Vec<usize>,
+    /// Optional Python interpreter path; empty means auto-detect.
+    pub python_path: String,
 }
 
 impl Default for Settings {
@@ -120,6 +122,7 @@ impl Default for Settings {
             assistant_mode: AssistantMode::Assistant,
             teacher_level: Level::Beginner,
             lessons_done: Vec::new(),
+            python_path: String::new(),
         }
     }
 }
@@ -215,6 +218,7 @@ impl Settings {
                         .collect()
                 })
                 .unwrap_or_default(),
+            python_path: text(&value["python_path"]),
             profile: provider.map(|provider| Profile {
                 provider,
                 name: text(&profile["name"]),
@@ -247,6 +251,7 @@ impl Settings {
             },
             "teacher_level": self.teacher_level.id(),
             "lessons_done": self.lessons_done,
+            "python_path": self.python_path,
             "profile": self.profile.as_ref().map(|profile| json!({
                 "provider": match profile.provider {
                     Provider::Google => "google",
@@ -304,6 +309,7 @@ mod tests {
             assistant_mode: AssistantMode::Teacher,
             teacher_level: Level::Intermediate,
             lessons_done: vec![1, 3],
+            python_path: String::new(),
             assistant_open: true,
             profile: Some(Profile {
                 provider: Provider::GitHub,

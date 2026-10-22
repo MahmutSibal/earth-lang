@@ -143,6 +143,23 @@ yaz(liste, uzunluk(liste), liste[-1])";
     }
 
     #[test]
+    fn supports_compound_assignments_on_variables_and_indexes() {
+        let source = "\
+değişken toplam = 10
+toplam += 5
+toplam -= 3
+toplam *= 2
+toplam /= 4
+toplam %= 3
+değişken liste = [1, 2]
+liste[0] += liste[1]
+değişken sözlük = {\"sayı\": 4}
+sözlük[\"sayı\"] *= 2
+yaz(toplam, liste, sözlük[\"sayı\"])";
+        assert_eq!(run(source).unwrap(), "0 [3, 2] 8\n");
+    }
+
+    #[test]
     fn short_circuits_logical_operators() {
         assert_eq!(
             run("yaz(yanlış ve tanımsız(), doğru veya tanımsız(), değil boş)").unwrap(),

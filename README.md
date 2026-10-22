@@ -14,7 +14,8 @@ Earth, **Türkçe ya da İngilizce yazılabilen** bir programlama dilidir. Her
 anahtar kelimenin ve her yerleşik fonksiyonun Türkçe ve İngilizce yazımı
 vardır; ikisi aynı anlama gelir, hatta aynı programda karıştırılabilir. Earth,
 kendi editörü **Earth Studio** ile gelir: dosya gezgini, renkli kod editörü ve
-programın çalıştığı terminal tek pencerede.
+programın çalıştığı terminal tek pencerede. Earth Studio ayrıca Python
+dosyalarını açıp çalıştırabilir.
 
 *Earth is a programming language you can write in Turkish or English: every
 keyword and built-in has both spellings, and Earth answers in the language
@@ -52,6 +53,7 @@ fib(20) = 6765
 - [Neden Earth?](#neden-earth)
 - [Hızlı başlangıç](#hızlı-başlangıç)
 - [Earth Studio](#earth-studio)
+  - [Python dosyaları](#python-dosyaları)
   - [Hesap ve ayarlar](#hesap-ve-ayarlar)
   - [Otomatik tamamlama](#otomatik-tamamlama) · [Canlı hata denetimi](#canlı-hata-denetimi) · [Hata ayıklayıcı](#hata-ayıklayıcı)
   - [Kişiselleştirme](#kişiselleştirme)
@@ -136,6 +138,18 @@ fib(20) = 6765
 | **Hesap ve ayarlar** (sol alt köşe) | **👤 Giriş yap** ile Google ya da GitHub hesabınla giriş, **⚙** ile [ayarlar](#kişiselleştirme). |
 | **Terminal** (editörün altı) | Programın çıktısı burada akar. Program `girdi` ile bir şey sorduğunda cevabı alttaki satıra yazarsın. Program çalışmıyorken aynı satır bir Earth komut satırıdır (REPL). Hata ayıklarken yanında hata ayıklama paneli açılır. |
 | **Durum çubuğu** (en alt) | Solda toplam indirme sayısı ve programın durumu (renkli nokta: Hazır, Çalışıyor, Duraklatıldı, Girdi bekleniyor); sağda varsa sözdizimi hatası, imlecin satır ve sütunu, dosyanın dili ve Studio'nun sürümü. |
+
+### Python dosyaları
+
+Earth Studio'da `.py` dosyalarını klasörden açabilir, düzenleyebilir ve **F5**
+ile çalıştırabilirsiniz. Çıktı ve hata akışı Earth dosyalarında olduğu gibi
+terminalde görünür; Python dosyalarında Earth'e özel canlı sözdizimi denetimi,
+hata ayıklayıcı, REPL ve öğretmen akışı devre dışıdır.
+
+Studio, ayarlarda özel bir yorumlayıcı yolu verilmedikçe Windows'ta önce
+`py`, sonra `python`; diğer sistemlerde `python3`, sonra `python` komutlarını
+arar. Python bulunamazsa terminalde Python indirme bağlantısı ve ayarlar
+sayfasına yönlendirme gösterilir.
 
 ### Klavye kısayolları
 
@@ -385,6 +399,7 @@ gelir) her yeni Komut İstemi ya da PowerShell penceresinde kullanılabilir:
 |---|---|
 | `earth` | Etkileşimli kabuğu açar (Python'daki gibi). Satır satır komut yaz, sonucu hemen gör; çıkmak için `çık`. |
 | `earth dosya.earth` | Dosyayı çalıştırır. Hata varsa satırı ve yerini gösterir, çıkış kodu `1` olur. |
+| `earth --check dosya.earth` | Dosyayı çalıştırmadan sözdizimini denetler; hatada çıkış kodu `1` olur. Türkçesi `--denetle`dir. |
 | `earth --dil en dosya.earth` | Çıktı ve hata dilini seçer (`tr` / `en`). Seçilmezse programın dilinden anlaşılır. |
 | `earth --sürüm`, `earth --yardım` | Sürümü ya da yardımı gösterir. |
 
@@ -445,19 +460,21 @@ Bitti
 ### 2. Değişkenler
 
 Bir değişkeni ilk kez **`değişken`** (`let`) ile tanımlarsın; sonra `=` ile
-yeni değer verebilirsin. Değişken adları harf ya da `_` ile başlar; Türkçe
-harfler kullanılabilir.
+yeni değer verebilirsin. Sık kullanılan işlemleri kısa yazmak için `+=`, `-=`,
+`*=`, `/=` ve `%=` bileşik atamalarını da kullanabilirsin. Değişken adları
+harf ya da `_` ile başlar; Türkçe harfler kullanılabilir.
 
 ```earth
 değişken sayaç = 0
 sayaç = sayaç + 1
 sayaç = sayaç * 10
+sayaç += 2
 değişken öğrenci_adı = "Ayşe"
 yaz(öğrenci_adı, sayaç)
 ```
 
 ```text
-Ayşe 10
+Ayşe 12
 ```
 
 Tanımlanmamış bir değişkene değer vermek hatadır; Earth bunu yazım
@@ -524,6 +541,7 @@ yaz(sayı("42") + 1, sayı("kırk iki"), metin(3.5) + "!")
 |---|---|---|---|
 | `+` `-` `*` `/` | toplama, çıkarma, çarpma, bölme | `7 / 2` | `3.5` |
 | `%` | bölümden kalan | `7 % 3` | `1` |
+| `+=` `-=` `*=` `/=` `%=` | bileşik atama | `sayaç += 1` | sayaç değişir |
 | `-x` | eksi | `-(2 + 3)` | `-5` |
 | `==` `!=` | eşit mi, farklı mı | `2 == 2.0` | `doğru` |
 | `<` `<=` `>` `>=` | karşılaştırma (sayılar ve metinler) | `"elma" < "armut"` | `yanlış` |
@@ -1126,10 +1144,11 @@ PATH'teki bir klasöre (örneğin `~/.local/bin`) kopyalarsan terminalde `earth`
 ### VS Code entegrasyonu
 
 VS Code kullanıyorsan [Earth eklentisini](https://marketplace.visualstudio.com/items?itemName=mahmutsibal.earth-lang)
-kurarak `.earth` dosyalarını VS Code içinde renklendirebilir, **F5** ile
-çalıştırabilir ve sağ tık menüsünden Earth Studio'da açabilirsin. Eklentinin
-`earth` komutunu bulabilmesi için kurulum sırasında **earth komutunu PATH'e ekle**
-seçeneğini işaretle. Ayrıntılar:
+kurarak `.earth` dosyalarını renklendirebilir ve bağımsız **Earth CLI**
+(`earth`/`earth.exe`) ile **F5** üzerinden çalıştırabilirsin. Earth Studio
+F5 için gerekli değildir. CLI'yi PATH'e ekleyebilir veya eklentide
+`earth.cliPath` ayarıyla tam yolu belirtebilirsin. Sağ tık menüsündeki
+**Earth: Earth Studio'da aç** komutu isteğe bağlıdır. Ayrıntılar:
 [editors/vscode/README.md](editors/vscode/README.md).
 
 ## Sık sorulan sorular

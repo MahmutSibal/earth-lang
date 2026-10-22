@@ -26,28 +26,34 @@ yaz("Merhaba, " + ad + "!")
 - Sağ tık menüsünden Earth Studio'da açma
 - Earth komutunun çıktısını VS Code Output panelinde görme
 
-## Earth Studio entegrasyonu
+## Bağımsız Earth CLI ile çalıştırma
 
-Earth Studio kurulduğunda ve `earth` komutu PATH'e eklendiğinde ek ayar
-gerekmez. Bir `.earth` dosyası açıkken:
+Eklenti yalnızca sözdizimi renklendirme ve bağımsız Earth CLI çalıştırma
+sağlar; F5 için Earth Studio kurulması gerekmez. Bir `.earth` dosyası açıkken:
 
 - **F5** veya sağ tık → **Earth: Dosyayı çalıştır** dosyayı kaydeder ve
-  `earth` komutuyla çalıştırır.
-- Sağ tık → **Earth: Earth Studio'da aç** dosyayı Earth Studio'da açar.
+  yalnızca `earth`/`earth.exe` CLI ile çalıştırır.
 - Komut Paleti → **Earth: Ayarları aç** eklenti ayarlarını gösterir.
 
-Earth komutu PATH'te değilse ayarlardan tam yolu belirtin:
+CLI PATH'te değilse ayarlardan tam yolu belirtin:
 
 ```json
 {
-  "earth.executablePath": "C:\\Users\\Siz\\AppData\\Local\\Programs\\Earth Studio\\earth.exe",
+  "earth.cliPath": "C:\\Users\\Siz\\AppData\\Local\\Programs\\Earth\\earth.exe",
   "earth.studioPath": "C:\\Users\\Siz\\AppData\\Local\\Programs\\Earth Studio\\earth-studio.exe"
 }
 ```
 
-Linux veya macOS'ta karşılık gelen çalıştırılabilir dosya yollarını kullanın.
-Eklenti Windows'ta PATH'i ve varsayılan Earth Studio kurulum klasörünü de
-otomatik olarak kontrol eder.
+Linux veya macOS'ta karşılık gelen CLI yolunu kullanın. Eklenti PATH'in yanı
+sıra platforma uygun varsayılan CLI konumlarını da kontrol eder. CLI
+bulunamazsa eklenti açık bir hata gösterir ve CLI release sayfasını açmayı
+önerir; Earth Studio'yu indirmez veya zorunlu kılmaz.
+
+## İsteğe bağlı Earth Studio entegrasyonu
+
+Sağ tık → **Earth: Earth Studio'da aç** komutu yalnızca açıkça seçildiğinde
+kullanılır. Studio kurulu değilse eklenti ayarları açmayı veya release
+sayfasına gitmeyi önerir; F5 akışını etkilemez.
 
 ## Kurulum
 

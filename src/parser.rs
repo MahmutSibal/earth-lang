@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
-use crate::ast::{BinaryOp, Expr, FunctionDecl, LogicalOp, Program, Stmt, StmtKind, UnaryOp};
+use crate::ast::{
+    AssignOp, BinaryOp, Expr, FunctionDecl, LogicalOp, Program, Stmt, StmtKind, UnaryOp,
+};
 use crate::error::{Error, Position};
 use crate::keywords::Keyword;
 use crate::lexer::{Token, TokenKind};
@@ -219,25 +221,41 @@ impl Parser<'_> {
 
     fn expression_statement(&mut self) -> Result<StmtKind, Error> {
         let expression = self.expression()?;
-        if !self.check(&TokenKind::Equal) {
+        let Some(op) = self.assignment_operator() else {
             return Ok(StmtKind::Expression(expression));
-        }
-        let position = self.advance().position;
+        };
+        let position = self.tokens[self.position - 1].position;
         let value = self.expression()?;
         match expression {
             Expr::Variable { name, .. } => Ok(StmtKind::Assign {
                 name,
                 value,
                 position,
+                op,
             }),
             Expr::Index { target, index, .. } => Ok(StmtKind::IndexAssign {
                 target: *target,
                 index: *index,
                 value,
                 position,
+                op,
             }),
             _ => Err(Error::at(position, Message::InvalidAssignmentTarget)),
         }
+    }
+
+    fn assignment_operator(&mut self) -> Option<AssignOp> {
+        let op = match self.peek().kind {
+            TokenKind::Equal => AssignOp::Set,
+            TokenKind::PlusEqual => AssignOp::Add,
+            TokenKind::MinusEqual => AssignOp::Subtract,
+            TokenKind::StarEqual => AssignOp::Multiply,
+            TokenKind::SlashEqual => AssignOp::Divide,
+            TokenKind::PercentEqual => AssignOp::Remainder,
+            _ => return None,
+        };
+        self.advance();
+        Some(op)
     }
 
     fn block(&mut self) -> Result<Vec<Stmt>, Error> {
@@ -544,7 +562,7 @@ impl Parser<'_> {
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::ast::{BinaryOp, Expr, Stmt, StmtKind};
+    use crate::ast::{AssignOp, BinaryOp, Expr, Stmt, StmtKind};
     use crate::error::{Error, Position};
     use crate::keywords::Lang;
     use crate::lexer::lex;
@@ -609,5 +627,24 @@ mod tests {
     #[test]
     fn rejects_break_in_function_inside_loop() {
         assert!(parse_source("iken doğru {\n fonksiyon f() { kır }\n}").is_err());
+    }
+
+    #[test]
+    fn parses_compound_assignments() {
+        let statements = parse_source("değişken x = 1\nx += 2\nx *= 3").unwrap();
+        assert!(matches!(
+            statements[1].kind,
+            StmtKind::Assign {
+                op: AssignOp::Add,
+                ..
+            }
+        ));
+        assert!(matches!(
+            statements[2].kind,
+            StmtKind::Assign {
+                op: AssignOp::Multiply,
+                ..
+            }
+        ));
     }
 }

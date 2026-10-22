@@ -54,6 +54,15 @@ impl StudioApp {
     /// Re-checks the open file when its text changed since the last check.
     pub(super) fn live_check(&mut self) {
         let document = &mut self.documents[self.active];
+        if document
+            .path
+            .as_deref()
+            .is_some_and(crate::files::is_python)
+        {
+            document.syntax_error = None;
+            document.checked_text = Some(document.text.clone());
+            return;
+        }
         if document.checked_text.as_deref() != Some(document.text.as_str()) {
             document.syntax_error = check(&document.text);
             document.checked_text = Some(document.text.clone());

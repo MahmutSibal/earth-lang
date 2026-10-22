@@ -3,10 +3,9 @@ name: Release
 # Pushing a tag such as v0.5.0 builds Earth Studio and publishes, with
 # SHA-256 checksums, a GitHub release containing:
 #   - EarthStudio-Kurulum.exe   the Windows installer
+#   - earth-cli-windows-x64.exe, earth-cli-linux-x64.tar.gz,
+#     earth-cli-macos-arm64.tar.gz
 #   - earth-studio-linux-x64.tar.gz, earth-studio-macos-arm64.tar.gz
-#     (Earth Studio plus the earth command-line interpreter)
-#   - earth-cli-windows-x64.zip, earth-cli-linux-x64.tar.gz,
-#     earth-cli-macos-arm64.tar.gz (standalone CLI packages)
 on:
   push:
     tags: ["v*"]
@@ -72,20 +71,16 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
 
+      - name: Prepare standalone Windows CLI
+        shell: pwsh
+        run: Copy-Item target/release/earth.exe earth-cli-windows-x64.exe
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
             windows/Output/EarthStudio-Kurulum.exe
-
-      - name: Package standalone CLI
-        shell: pwsh
-        run: Compress-Archive -Path target/release/earth.exe -DestinationPath earth-cli-windows-x64.zip
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: earth-cli-windows-x64
-          path: earth-cli-windows-x64.zip
+            earth-cli-windows-x64.exe
 
   unix:
     strategy:
@@ -113,13 +108,13 @@ jobs:
           tar czf ${{ matrix.archive }} earth-studio
           mkdir earth-cli
           cp target/release/earth README.md LICENSE earth-cli/
-          tar czf "${{ matrix.cli_archive }}" earth-cli
+          tar czf ${{ matrix.cli_archive }} earth-cli
       - uses: actions/upload-artifact@v4
         with:
-          name: unix-${{ matrix.archive }}
+          name: ${{ matrix.archive }}-${{ matrix.cli_archive }}
           path: |
             ${{ matrix.archive }}
-            earth-cli-*.tar.gz
+            ${{ matrix.cli_archive }}
 
   release:
     needs: [windows, unix]
@@ -129,11 +124,11 @@ jobs:
         with:
           merge-multiple: true
       - name: Checksums
-        run: sha256sum EarthStudio-Kurulum.exe earth-studio-* earth-cli-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+        run: sha256sum EarthStudio-Kurulum.exe earth-cli-* earth-studio-* > SHA256SUMS.txt && cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             EarthStudio-Kurulum.exe
-            earth-studio-*
             earth-cli-*
+            earth-studio-*
             SHA256SUMS.txt

@@ -2,7 +2,7 @@
   "name": "earth-lang",
   "displayName": "Earth Language - Turkish Programming",
   "description": "Türkçe ve İngilizce yazılabilen Earth programlama dili için VS Code desteği",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "publisher": "mahmutsibal",
   "license": "MIT",
   "repository": {
@@ -72,10 +72,15 @@
     "configuration": {
       "title": "Earth",
       "properties": {
+        "earth.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Bağımsız Earth CLI (earth veya earth.exe) yolu. Boş bırakılırsa platform PATH'i ve varsayılan yollar aranır."
+        },
         "earth.executablePath": {
           "type": "string",
           "default": "",
-          "description": "earth komutunun yolu. Boş bırakılırsa PATH'te aranır."
+          "description": "Eski ayar adı; uyumluluk için desteklenir. Yeni kurulumlarda earth.cliPath kullanın."
         },
         "earth.studioPath": {
           "type": "string",
