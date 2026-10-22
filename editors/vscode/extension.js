@@ -12,9 +12,24 @@ function configuredPath(name) {
 
 function executableCandidates(name) {
   if (name === "cli") {
-    return process.platform === "win32"
-      ? ["earth.exe", "earth"]
-      : ["earth"];
+    const home = process.env.USERPROFILE || process.env.HOME;
+    if (process.platform === "win32") {
+      const localAppData = process.env.LOCALAPPDATA;
+      return [
+        ...(localAppData
+          ? [path.join(localAppData, "Programs", "Earth", "earth.exe")]
+          : []),
+        ...(home ? [path.join(home, ".earth", "earth.exe")] : []),
+        "earth.exe",
+      ];
+    }
+
+    return [
+      ...(home ? [path.join(home, ".local", "bin", "earth")] : []),
+      "/usr/local/bin/earth",
+      ...(process.platform === "darwin" ? ["/opt/homebrew/bin/earth"] : []),
+      "earth",
+    ];
   }
 
   if (process.platform === "win32") {
@@ -31,8 +46,10 @@ function executableCandidates(name) {
 }
 
 function findExecutable(kind) {
-  const settingName = kind === "cli" ? "executablePath" : "studioPath";
-  const configured = configuredPath(settingName);
+  const configured =
+    kind === "cli"
+      ? configuredPath("cliPath") || configuredPath("executablePath")
+      : configuredPath("studioPath");
   if (configured) {
     return configured;
   }
@@ -44,22 +61,21 @@ function findExecutable(kind) {
     }
   }
 
-  if (process.platform === "win32") {
-    const command = kind === "cli" ? "earth.exe" : "earth-studio.exe";
-    try {
-      const resolved = execFileSync("where.exe", [command], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      })
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .find(Boolean);
-      if (resolved) {
-        return resolved;
-      }
-    } catch {
-      // The caller reports a clear installation/configuration error.
+  const command = kind === "cli" ? "earth" : "earth-studio";
+  try {
+    const resolver = process.platform === "win32" ? "where.exe" : "which";
+    const resolved = execFileSync(resolver, [command], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+    if (resolved) {
+      return resolved;
     }
+  } catch {
+    // The caller reports a clear installation/configuration error.
   }
   return undefined;
 }
@@ -91,13 +107,20 @@ function runEarthFile(file) {
   const executable = findExecutable("cli");
   if (!executable) {
     vscode.window.showErrorMessage(
-      "Earth komutu bulunamadı. Earth Studio'yu kurun veya earth.executablePath ayarını belirtin.",
-      "Ayarları aç"
+      "Earth CLI bulunamadı. Earth CLI'yi PATH'e ekleyin veya earth.cliPath ayarını belirtin.",
+      "Ayarları aç",
+      "CLI edinme sayfası"
     ).then((action) => {
       if (action === "Ayarları aç") {
         vscode.commands.executeCommand(
           "workbench.action.openSettings",
-          "earth.executablePath"
+          "earth.cliPath"
+        );
+      } else if (action === "CLI edinme sayfası") {
+        vscode.env.openExternal(
+          vscode.Uri.parse(
+            "https://github.com/MahmutSibal/earth-lang/releases/latest"
+          )
         );
       }
     });
