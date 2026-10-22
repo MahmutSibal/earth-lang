@@ -332,6 +332,11 @@ impl Worker {
         let stderr = process.stderr.take();
         if let Ok(mut slot) = self.child.lock() {
             *slot = Some(process);
+            if self.interrupt.load(Ordering::Relaxed) {
+                if let Some(child) = slot.as_mut() {
+                    let _ = child.kill();
+                }
+            }
         }
         let events = self.events.clone();
         let wake = Arc::clone(&self.wake);
@@ -731,6 +736,39 @@ mod tests {
         let (text, error_file) = message.unwrap();
         assert!(text.contains("Python"));
         assert_eq!(error_file, file);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn stops_python_processes_and_clears_the_child_slot() {
+        let root =
+            std::env::temp_dir().join(format!("earth-studio-python-stop-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let (script, interpreter, contents) = if cfg!(windows) {
+            (
+                root.join("loop.bat"),
+                "cmd".to_owned(),
+                "@echo off\r\n:loop\r\ngoto loop\r\n".to_owned(),
+            )
+        } else {
+            (
+                root.join("loop.sh"),
+                "sh".to_owned(),
+                "#!/bin/sh\nwhile true; do :; done\n".to_owned(),
+            )
+        };
+        std::fs::write(&script, contents).unwrap();
+
+        let mut runner = Runner::new(|| {});
+        runner.python(script, root.clone(), Some(interpreter));
+        std::thread::sleep(Duration::from_millis(50));
+        runner.stop();
+        let events = wait_until_finished(&mut runner);
+
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, Event::Finished { interrupted: true })));
+        assert!(runner.child.lock().unwrap().is_none());
         std::fs::remove_dir_all(root).unwrap();
     }
 
