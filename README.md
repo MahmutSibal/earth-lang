@@ -1121,10 +1121,11 @@ yönlendirir.
 ### VS Code entegrasyonu
 
 VS Code kullanıyorsan [Earth eklentisini](https://marketplace.visualstudio.com/items?itemName=mahmutsibal.earth-lang)
-kurarak `.earth` dosyalarını VS Code içinde renklendirebilir, **F5** ile
-çalıştırabilir ve sağ tık menüsünden Earth Studio'da açabilirsin. Eklentinin
-`earth` komutunu bulabilmesi için kurulum sırasında **earth komutunu PATH'e ekle**
-seçeneğini işaretle. Ayrıntılar:
+kurarak `.earth` dosyalarını renklendirebilir ve bağımsız **Earth CLI**
+(`earth`/`earth.exe`) ile **F5** üzerinden çalıştırabilirsin. Earth Studio
+F5 için gerekli değildir. CLI'yi PATH'e ekleyebilir veya eklentide
+`earth.cliPath` ayarıyla tam yolu belirtebilirsin. Sağ tık menüsündeki
+**Earth: Earth Studio'da aç** komutu isteğe bağlıdır. Ayrıntılar:
 [editors/vscode/README.md](editors/vscode/README.md).
 
 ## Sık sorulan sorular
