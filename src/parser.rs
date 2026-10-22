@@ -390,7 +390,7 @@ impl Parser<'_> {
         let op = match self.peek().kind {
             TokenKind::Minus => UnaryOp::Negate,
             TokenKind::Keyword(Keyword::Not) => UnaryOp::Not,
-            _ => return self.postfix(),
+            _ => return self.power(),
         };
         let position = self.advance().position;
         let operand = self.unary()?;
@@ -399,6 +399,21 @@ impl Parser<'_> {
             operand: Box::new(operand),
             position,
         })
+    }
+
+    fn power(&mut self) -> Result<Expr, Error> {
+        let left = self.postfix()?;
+        if self.eat(&TokenKind::DoubleStar) {
+            let position = self.tokens[self.position - 1].position;
+            let right = self.unary()?;
+            return Ok(Expr::Binary {
+                op: BinaryOp::Power,
+                left: Box::new(left),
+                right: Box::new(right),
+                position,
+            });
+        }
+        Ok(left)
     }
 
     fn postfix(&mut self) -> Result<Expr, Error> {
@@ -582,6 +597,35 @@ mod tests {
             **right,
             Expr::Binary {
                 op: BinaryOp::Multiply,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_power_as_right_associative_and_above_multiplication() {
+        let statements = parse_source("2 * 3 ** 2").unwrap();
+        let StmtKind::Expression(Expr::Binary { op, right, .. }) = &statements[0].kind else {
+            panic!("expected a binary expression");
+        };
+        assert_eq!(*op, BinaryOp::Multiply);
+        assert!(matches!(
+            **right,
+            Expr::Binary {
+                op: BinaryOp::Power,
+                ..
+            }
+        ));
+
+        let statements = parse_source("2 ** 3 ** 2").unwrap();
+        let StmtKind::Expression(Expr::Binary { op, right, .. }) = &statements[0].kind else {
+            panic!("expected a binary expression");
+        };
+        assert_eq!(*op, BinaryOp::Power);
+        assert!(matches!(
+            **right,
+            Expr::Binary {
+                op: BinaryOp::Power,
                 ..
             }
         ));

@@ -96,6 +96,14 @@ if sayaç == 3 { yaz(\"tamam\") } else { print(\"no\") }";
     }
 
     #[test]
+    fn evaluates_right_associative_power_operator() {
+        assert_eq!(
+            run("yaz(2 ** 3, 2 ** 3 ** 2, -2 ** 2)").unwrap(),
+            "8 512 -4\n"
+        );
+    }
+
+    #[test]
     fn supports_else_if_chains() {
         let source = "\
 fonksiyon not_hesapla(puan) {

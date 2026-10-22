@@ -537,6 +537,7 @@ yaz(sayı("42") + 1, sayı("kırk iki"), metin(3.5) + "!")
 |---|---|---|---|
 | `+` `-` `*` `/` | toplama, çıkarma, çarpma, bölme | `7 / 2` | `3.5` |
 | `%` | bölümden kalan | `7 % 3` | `1` |
+| `**` | üs alma | `2 ** 3` | `8` |
 | `+=` `-=` `*=` `/=` `%=` | bileşik atama | `sayaç += 1` | sayaç değişir |
 | `-x` | eksi | `-(2 + 3)` | `-5` |
 | `==` `!=` | eşit mi, farklı mı | `2 == 2.0` | `doğru` |
@@ -545,8 +546,9 @@ yaz(sayı("42") + 1, sayı("kırk iki"), metin(3.5) + "!")
 | `veya` (`or`) | biri doğruysa doğru | `doğru veya yanlış` | `doğru` |
 | `değil` (`not`) | tersi | `değil doğru` | `yanlış` |
 
-**Öncelik** (yüksekten düşüğe): `-x`, `değil` → `*` `/` `%` → `+` `-` →
+**Öncelik** (yüksekten düşüğe): `**` → `-x`, `değil` → `*` `/` `%` → `+` `-` →
 `<` `<=` `>` `>=` → `==` `!=` → `ve` → `veya`. Emin olmadığında parantez kullan.
+`**` sağdan birleşir: `2 ** 3 ** 2`, `2 ** (3 ** 2)` ile aynıdır.
 
 ```earth
 yaz(2 + 3 * 4, (2 + 3) * 4, 10 % 4, 1 / 4)
