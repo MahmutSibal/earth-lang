@@ -1251,15 +1251,17 @@ earth-lang/
 1. `Cargo.toml` ve `studio/Cargo.toml` içindeki `version`'ı artır.
 2. Bir etiket gönder: `git tag v0.7.0 && git push origin v0.7.0`.
 3. `release` workflow'u Windows kurulum dosyasını, Studio arşivlerini, bağımsız
-   CLI arşivlerini ve `SHA256SUMS.txt`'yi Releases sayfasına ekler.
+   CLI arşivlerini, VS Code `.vsix` paketini ve `SHA256SUMS.txt`'yi Releases
+   sayfasına ekler.
 4. Kullanıcıların Earth Studio'su yeni sürümü kendiliğinden bulur ve kurar.
 
 Workflow, etiket gönderilmeden önce `Cargo.toml` ile `studio/Cargo.toml`
 sürümlerinin etiketiyle aynı olduğunu ve VS Code eklentisinin geçerli bir
-semver kullandığını doğrular. Yayın aşamasında beklenen altı dosyanın tamamı
+semver kullandığını doğrular. Yayın aşamasında beklenen yedi dosyanın tamamı
 kontrol edilir; eksik dosya varsa release oluşturulmaz. VS Code eklentisi
-`editors/vscode/package.json` içindeki bağımsız sürümünü korur ve CLI/Studio
-release etiketiyle aynı olmak zorunda değildir.
+release sırasında `editors/vscode/package.json` içinden yeniden paketlenir ve
+sürümü `earth-lang-<sürüm>.vsix` dosya adına yansır. Kaynak ağaçta bulunan
+eski `.vsix` dosyaları `.vscodeignore` ile yeni pakete dahil edilmez.
 
 GitHub Actions kullanılamıyorsa Windows kurulum dosyası Linux'ta da üretilebilir
 (MinGW-w64, Wine ve Wine altında kurulu

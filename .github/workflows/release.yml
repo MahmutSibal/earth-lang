@@ -6,6 +6,7 @@ name: Release
 #   - earth-cli-windows-x64.exe, earth-cli-linux-x64.tar.gz,
 #     earth-cli-macos-arm64.tar.gz
 #   - earth-studio-linux-x64.tar.gz, earth-studio-macos-arm64.tar.gz
+#   - earth-lang-*.vsix                 the VS Code Marketplace package
 on:
   push:
     tags: ["v*"]
@@ -134,8 +135,29 @@ jobs:
             ${{ matrix.archive }}
             ${{ matrix.cli_archive }}
 
+  vscode:
+    needs: preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Package VS Code extension
+        working-directory: editors/vscode
+        run: |
+          cp ../../LICENSE LICENSE
+          npx --yes @vscode/vsce@3 package --no-dependencies
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode
+          path: editors/vscode/*.vsix
+          if-no-files-found: error
+
   release:
-    needs: [windows, unix]
+    needs: [windows, unix, vscode]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -154,6 +176,7 @@ jobs:
             earth-cli-macos-arm64.tar.gz
             earth-studio-linux-x64.tar.gz
             earth-studio-macos-arm64.tar.gz
+            earth-lang-${GITHUB_REF_NAME#v}.vsix
           )
           for asset in "${assets[@]}"; do
             test -f "$asset" || { echo "Missing release asset: $asset" >&2; exit 1; }
@@ -166,4 +189,5 @@ jobs:
             EarthStudio-Kurulum.exe
             earth-cli-*
             earth-studio-*
+            earth-lang-*.vsix
             SHA256SUMS.txt

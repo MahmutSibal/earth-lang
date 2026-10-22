@@ -1,0 +1,5 @@
+.vscode/**
+**/*.vsix
+**/gen_grammar.py
+README.md
+package-lock.json
