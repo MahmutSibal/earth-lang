@@ -252,6 +252,7 @@ impl Parser<'_> {
             TokenKind::StarEqual => AssignOp::Multiply,
             TokenKind::SlashEqual => AssignOp::Divide,
             TokenKind::PercentEqual => AssignOp::Remainder,
+            TokenKind::DoubleStarEqual => AssignOp::Power,
             _ => return None,
         };
         self.advance();
@@ -308,7 +309,7 @@ impl Parser<'_> {
 
     fn or(&mut self) -> Result<Expr, Error> {
         let mut left = self.and()?;
-        while self.eat(&TokenKind::Keyword(Keyword::Or)) {
+        while self.eat(&TokenKind::Keyword(Keyword::Or)) || self.eat(&TokenKind::OrOr) {
             let right = self.and()?;
             left = Expr::Logical {
                 op: LogicalOp::Or,
@@ -321,7 +322,7 @@ impl Parser<'_> {
 
     fn and(&mut self) -> Result<Expr, Error> {
         let mut left = self.equality()?;
-        while self.eat(&TokenKind::Keyword(Keyword::And)) {
+        while self.eat(&TokenKind::Keyword(Keyword::And)) || self.eat(&TokenKind::AndAnd) {
             let right = self.equality()?;
             left = Expr::Logical {
                 op: LogicalOp::And,
@@ -675,7 +676,7 @@ mod tests {
 
     #[test]
     fn parses_compound_assignments() {
-        let statements = parse_source("değişken x = 1\nx += 2\nx *= 3").unwrap();
+        let statements = parse_source("değişken x = 1\nx += 2\nx *= 3\nx **= 2").unwrap();
         assert!(matches!(
             statements[1].kind,
             StmtKind::Assign {
@@ -687,6 +688,13 @@ mod tests {
             statements[2].kind,
             StmtKind::Assign {
                 op: AssignOp::Multiply,
+                ..
+            }
+        ));
+        assert!(matches!(
+            statements[3].kind,
+            StmtKind::Assign {
+                op: AssignOp::Power,
                 ..
             }
         ));

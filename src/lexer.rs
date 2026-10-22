@@ -24,6 +24,7 @@ pub enum TokenKind {
     Slash,
     Percent,
     DoubleStar,
+    DoubleStarEqual,
     Equal,
     PlusEqual,
     MinusEqual,
@@ -36,6 +37,8 @@ pub enum TokenKind {
     LessEqual,
     Greater,
     GreaterEqual,
+    AndAnd,
+    OrOr,
     Newline,
     Eof,
 }
@@ -65,6 +68,7 @@ impl TokenKind {
             TokenKind::Slash => "/",
             TokenKind::Percent => "%",
             TokenKind::DoubleStar => "**",
+            TokenKind::DoubleStarEqual => "**=",
             TokenKind::Equal => "=",
             TokenKind::PlusEqual => "+=",
             TokenKind::MinusEqual => "-=",
@@ -77,6 +81,8 @@ impl TokenKind {
             TokenKind::LessEqual => "<=",
             TokenKind::Greater => ">",
             TokenKind::GreaterEqual => ">=",
+            TokenKind::AndAnd => "&&",
+            TokenKind::OrOr => "||",
         };
         Found::Token(symbol.to_owned())
     }
@@ -195,9 +201,19 @@ impl Lexer {
             '+' => TokenKind::Plus,
             '-' if self.eat('=') => TokenKind::MinusEqual,
             '-' => TokenKind::Minus,
-            '*' if self.eat('=') => TokenKind::StarEqual,
-            '*' if self.eat('*') => TokenKind::DoubleStar,
-            '*' => TokenKind::Star,
+            '*' => {
+                if self.eat('=') {
+                    TokenKind::StarEqual
+                } else if self.eat('*') {
+                    if self.eat('=') {
+                        TokenKind::DoubleStarEqual
+                    } else {
+                        TokenKind::DoubleStar
+                    }
+                } else {
+                    TokenKind::Star
+                }
+            }
             '/' if self.eat('=') => TokenKind::SlashEqual,
             '/' => TokenKind::Slash,
             '%' if self.eat('=') => TokenKind::PercentEqual,
@@ -209,6 +225,8 @@ impl Lexer {
             '<' => TokenKind::Less,
             '>' if self.eat('=') => TokenKind::GreaterEqual,
             '>' => TokenKind::Greater,
+            '&' if self.eat('&') => TokenKind::AndAnd,
+            '|' if self.eat('|') => TokenKind::OrOr,
             other => return Err(Error::at(start, Message::UnexpectedCharacter(other))),
         };
         Ok(kind)
@@ -366,6 +384,34 @@ mod tests {
                 TokenKind::GreaterEqual,
                 TokenKind::Number(2.5),
                 TokenKind::Newline,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_power_assignment() {
+        assert_eq!(
+            kinds("x **= 2"),
+            vec![
+                TokenKind::Identifier("x".to_owned()),
+                TokenKind::DoubleStarEqual,
+                TokenKind::Number(2.0),
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_symbolic_logical_operators() {
+        assert_eq!(
+            kinds("doğru && yanlış || doğru"),
+            vec![
+                TokenKind::Keyword(Keyword::True),
+                TokenKind::AndAnd,
+                TokenKind::Keyword(Keyword::False),
+                TokenKind::OrOr,
+                TokenKind::Keyword(Keyword::True),
                 TokenKind::Eof,
             ]
         );

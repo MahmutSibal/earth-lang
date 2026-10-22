@@ -159,12 +159,14 @@ toplam -= 3
 toplam *= 2
 toplam /= 4
 toplam %= 3
+toplam **= 2
 değişken liste = [1, 2]
 liste[0] += liste[1]
+liste[0] **= 2
 değişken sözlük = {\"sayı\": 4}
 sözlük[\"sayı\"] *= 2
 yaz(toplam, liste, sözlük[\"sayı\"])";
-        assert_eq!(run(source).unwrap(), "0 [3, 2] 8\n");
+        assert_eq!(run(source).unwrap(), "0 [9, 2] 8\n");
     }
 
     #[test]
@@ -172,6 +174,10 @@ yaz(toplam, liste, sözlük[\"sayı\"])";
         assert_eq!(
             run("yaz(yanlış ve tanımsız(), doğru veya tanımsız(), değil boş)").unwrap(),
             "yanlış doğru doğru\n"
+        );
+        assert_eq!(
+            run("print(false && undefined(), true || undefined(), not nil)").unwrap(),
+            "false true true\n"
         );
     }
 
