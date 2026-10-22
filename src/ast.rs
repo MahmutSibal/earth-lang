@@ -24,6 +24,16 @@ pub enum BinaryOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssignOp {
+    Set,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogicalOp {
     And,
     Or,
@@ -95,12 +105,14 @@ pub enum StmtKind {
         name: String,
         value: Expr,
         position: Position,
+        op: AssignOp,
     },
     IndexAssign {
         target: Expr,
         index: Expr,
         value: Expr,
         position: Position,
+        op: AssignOp,
     },
     If {
         condition: Expr,

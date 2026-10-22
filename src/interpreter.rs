@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::ast::{BinaryOp, Expr, LogicalOp, Program, Stmt, StmtKind, UnaryOp};
+use crate::ast::{AssignOp, BinaryOp, Expr, LogicalOp, Program, Stmt, StmtKind, UnaryOp};
 use crate::debug::{self, Debugger, LoopTurn, Snapshot, Variable};
 use crate::error::{Error, Position};
 use crate::keywords::{builtins, Builtin, Lang};
@@ -182,8 +182,18 @@ impl<'io> Interpreter<'io> {
                 name,
                 value,
                 position,
+                op,
             } => {
-                let value = self.evaluate(value, env)?;
+                let current = env.borrow().get(name);
+                let value = self.assigned_value(
+                    *op,
+                    current.ok_or_else(|| {
+                        Error::at(*position, Message::UndefinedVariable(name.clone()))
+                    })?,
+                    value,
+                    env,
+                    *position,
+                )?;
                 if !env.borrow_mut().assign(name, value) {
                     return Err(Error::at(
                         *position,
@@ -196,18 +206,30 @@ impl<'io> Interpreter<'io> {
                 index,
                 value,
                 position,
+                op,
             } => {
                 let target = self.evaluate(target, env)?;
                 let index = self.evaluate(index, env)?;
-                let value = self.evaluate(value, env)?;
                 match target {
                     Value::List(items) => {
-                        let mut items = items.borrow_mut();
-                        let slot = list_index(&index, items.len(), *position)?;
-                        items[slot] = value;
+                        let slot = {
+                            let items = items.borrow();
+                            list_index(&index, items.len(), *position)?
+                        };
+                        let current = items.borrow()[slot].clone();
+                        let value = self.assigned_value(*op, current, value, env, *position)?;
+                        items.borrow_mut()[slot] = value;
                     }
                     Value::Dict(dict) => {
                         let key = dict_key(&index, *position)?;
+                        let value = if *op == AssignOp::Set {
+                            self.evaluate(value, env)?
+                        } else {
+                            let current = dict.borrow().get(&key).cloned().ok_or_else(|| {
+                                Error::at(*position, Message::MissingKey(key.to_string()))
+                            })?;
+                            self.assigned_value(*op, current, value, env, *position)?
+                        };
                         dict.borrow_mut().insert(key, value);
                     }
                     other => {
@@ -762,6 +784,35 @@ impl<'io> Interpreter<'io> {
             }
         };
         Ok(result)
+    }
+
+    fn assigned_value(
+        &mut self,
+        op: AssignOp,
+        current: Value,
+        value: &Expr,
+        env: &Env,
+        position: Position,
+    ) -> Result<Value, Error> {
+        let value = self.evaluate(value, env)?;
+        match op {
+            AssignOp::Set => Ok(value),
+            AssignOp::Add
+            | AssignOp::Subtract
+            | AssignOp::Multiply
+            | AssignOp::Divide
+            | AssignOp::Remainder => {
+                let binary = match op {
+                    AssignOp::Add => BinaryOp::Add,
+                    AssignOp::Subtract => BinaryOp::Subtract,
+                    AssignOp::Multiply => BinaryOp::Multiply,
+                    AssignOp::Divide => BinaryOp::Divide,
+                    AssignOp::Remainder => BinaryOp::Remainder,
+                    AssignOp::Set => unreachable!(),
+                };
+                self.binary(binary, current, value, position)
+            }
+        }
     }
 }
 
