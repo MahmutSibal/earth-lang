@@ -547,8 +547,8 @@ yaz(sayı("42") + 1, sayı("kırk iki"), metin(3.5) + "!")
 | `-x` | eksi | `-(2 + 3)` | `-5` |
 | `==` `!=` | eşit mi, farklı mı | `2 == 2.0` | `doğru` |
 | `<` `<=` `>` `>=` | karşılaştırma (sayılar ve metinler) | `"elma" < "armut"` | `yanlış` |
-| `ve` (`and`) | ikisi de doğruysa doğru | `doğru ve yanlış` | `yanlış` |
-| `veya` (`or`) | biri doğruysa doğru | `doğru veya yanlış` | `doğru` |
+| `ve` (`and`), `&&` | ikisi de doğruysa doğru | `doğru ve yanlış` | `yanlış` |
+| `veya` (`or`), `||` | biri doğruysa doğru | `doğru veya yanlış` | `doğru` |
 | `değil` (`not`) | tersi | `değil doğru` | `yanlış` |
 
 **Öncelik** (yüksekten düşüğe): `**` → `-x`, `değil` → `*` `/` `%` → `+` `-` →
@@ -566,8 +566,8 @@ doğru yanlış
 ```
 
 **Doğruluk:** koşullarda yalnızca `yanlış` ve `boş` yanlış sayılır; `0`, `""`
-ve `[]` doğrudur. `ve`/`veya` **kısa devre** yapar: sonuç belli olduysa sağ
-taraf hiç hesaplanmaz.
+ve `[]` doğrudur. `ve`/`veya` (ya da `&&`/`||`) **kısa devre** yapar: sonuç belli olduysa
+sağ taraf hiç hesaplanmaz.
 
 **Sıfıra bölme** hata verir: `yaz(1 / 0)` → `Sıfıra bölme`.
 

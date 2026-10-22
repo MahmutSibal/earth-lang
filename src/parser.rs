@@ -309,7 +309,7 @@ impl Parser<'_> {
 
     fn or(&mut self) -> Result<Expr, Error> {
         let mut left = self.and()?;
-        while self.eat(&TokenKind::Keyword(Keyword::Or)) {
+        while self.eat(&TokenKind::Keyword(Keyword::Or)) || self.eat(&TokenKind::OrOr) {
             let right = self.and()?;
             left = Expr::Logical {
                 op: LogicalOp::Or,
@@ -322,7 +322,7 @@ impl Parser<'_> {
 
     fn and(&mut self) -> Result<Expr, Error> {
         let mut left = self.equality()?;
-        while self.eat(&TokenKind::Keyword(Keyword::And)) {
+        while self.eat(&TokenKind::Keyword(Keyword::And)) || self.eat(&TokenKind::AndAnd) {
             let right = self.equality()?;
             left = Expr::Logical {
                 op: LogicalOp::And,

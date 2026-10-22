@@ -37,6 +37,8 @@ pub enum TokenKind {
     LessEqual,
     Greater,
     GreaterEqual,
+    AndAnd,
+    OrOr,
     Newline,
     Eof,
 }
@@ -79,6 +81,8 @@ impl TokenKind {
             TokenKind::LessEqual => "<=",
             TokenKind::Greater => ">",
             TokenKind::GreaterEqual => ">=",
+            TokenKind::AndAnd => "&&",
+            TokenKind::OrOr => "||",
         };
         Found::Token(symbol.to_owned())
     }
@@ -221,6 +225,8 @@ impl Lexer {
             '<' => TokenKind::Less,
             '>' if self.eat('=') => TokenKind::GreaterEqual,
             '>' => TokenKind::Greater,
+            '&' if self.eat('&') => TokenKind::AndAnd,
+            '|' if self.eat('|') => TokenKind::OrOr,
             other => return Err(Error::at(start, Message::UnexpectedCharacter(other))),
         };
         Ok(kind)
@@ -391,6 +397,21 @@ mod tests {
                 TokenKind::Identifier("x".to_owned()),
                 TokenKind::DoubleStarEqual,
                 TokenKind::Number(2.0),
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_symbolic_logical_operators() {
+        assert_eq!(
+            kinds("doğru && yanlış || doğru"),
+            vec![
+                TokenKind::Keyword(Keyword::True),
+                TokenKind::AndAnd,
+                TokenKind::Keyword(Keyword::False),
+                TokenKind::OrOr,
+                TokenKind::Keyword(Keyword::True),
                 TokenKind::Eof,
             ]
         );

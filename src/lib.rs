@@ -175,6 +175,10 @@ yaz(toplam, liste, sözlük[\"sayı\"])";
             run("yaz(yanlış ve tanımsız(), doğru veya tanımsız(), değil boş)").unwrap(),
             "yanlış doğru doğru\n"
         );
+        assert_eq!(
+            run("print(false && undefined(), true || undefined(), not nil)").unwrap(),
+            "false true true\n"
+        );
     }
 
     #[test]
