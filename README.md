@@ -387,8 +387,12 @@ siler.
 
 ## Komut satırı: `earth`
 
-Kurulum, Earth Studio'nun yanında komut satırı yorumlayıcısı **`earth`**'ü de
-kurar. Sihirbazdaki **earth komutunu PATH'e ekle** seçeneği işaretliyse (işaretli
+Earth CLI, Earth Studio'dan bağımsız olarak dağıtılır. Releases sayfasındaki
+işletim sistemine uygun `earth-cli-windows-x64.zip`,
+`earth-cli-linux-x64.tar.gz` veya `earth-cli-macos-arm64.tar.gz` arşivini
+indirip içindeki `earth`/`earth.exe` dosyasını PATH'teki bir klasöre
+koyabilirsin. Windows'ta Studio kurulumunu seçersen CLI de onun yanında kurulur.
+Sihirbazdaki **earth komutunu PATH'e ekle** seçeneği işaretliyse (işaretli
 gelir) her yeni Komut İstemi ya da PowerShell penceresinde kullanılabilir:
 
 | Komut | Ne yapar |
@@ -1123,20 +1127,21 @@ irm https://raw.githubusercontent.com/MahmutSibal/earth-lang/main/install.ps1 | 
 ```
 
 **Doğrulama:** Releases sayfasındaki `SHA256SUMS.txt` dosyasındaki özet ile
-indirdiğin dosyanın özetini karşılaştırabilirsin:
+indirdiğin Studio veya CLI paketinin özetini karşılaştırabilirsin:
 
 ```powershell
 Get-FileHash EarthStudio-Kurulum.exe
+Get-FileHash earth-cli-windows-x64.zip
 ```
 
 ### Linux ve macOS
 
-Releases sayfasındaki `earth-studio-linux-x64.tar.gz` ya da
+Studio için Releases sayfasındaki `earth-studio-linux-x64.tar.gz` ya da
 `earth-studio-macos-arm64.tar.gz` arşivini aç ve `earth-studio` programını
-çalıştır. Arşivdeki `earth` komut satırı yorumlayıcısını PATH'teki bir klasöre
-(örneğin `~/.local/bin`) kopyalarsan terminalde `earth` ve `earth dosya.earth`
-kullanılabilir. Bu sistemlerde Studio yeni sürümleri haber verir ve indirme sayfasına
-yönlendirir.
+çalıştır. Yalnızca CLI için `earth-cli-linux-x64.tar.gz` veya
+`earth-cli-macos-arm64.tar.gz` arşivini kullan. İçindeki `earth` dosyasını
+PATH'teki bir klasöre (örneğin `~/.local/bin`) kopyalarsan terminalde `earth` ve
+`earth dosya.earth` kullanılabilir.
 
 ### VS Code entegrasyonu
 
@@ -1244,8 +1249,8 @@ earth-lang/
 
 1. `Cargo.toml` ve `studio/Cargo.toml` içindeki `version`'ı artır.
 2. Bir etiket gönder: `git tag v0.7.0 && git push origin v0.7.0`.
-3. `release` workflow'u Windows kurulum dosyasını, Linux/macOS arşivlerini ve
-   `SHA256SUMS.txt`'yi Releases sayfasına ekler.
+3. `release` workflow'u Windows kurulum dosyasını, Studio arşivlerini, bağımsız
+   CLI arşivlerini ve `SHA256SUMS.txt`'yi Releases sayfasına ekler.
 4. Kullanıcıların Earth Studio'su yeni sürümü kendiliğinden bulur ve kurar.
 
 GitHub Actions kullanılamıyorsa Windows kurulum dosyası Linux'ta da üretilebilir
