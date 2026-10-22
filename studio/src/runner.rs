@@ -42,6 +42,8 @@ enum Command {
 
 pub enum Event {
     Output(String),
+    /// Output written to a Python process's standard error stream.
+    ErrorOutput(String),
     /// The program asked for input with `girdi`.
     WaitingForInput,
     Error {
@@ -333,10 +335,10 @@ impl Worker {
         }
         let events = self.events.clone();
         let wake = Arc::clone(&self.wake);
-        let out_thread = thread::spawn(move || pump_python_output(stdout, events, wake));
+        let out_thread = thread::spawn(move || pump_python_output(stdout, events, wake, false));
         let events = self.events.clone();
         let wake = Arc::clone(&self.wake);
-        let err_thread = thread::spawn(move || pump_python_output(stderr, events, wake));
+        let err_thread = thread::spawn(move || pump_python_output(stderr, events, wake, true));
         loop {
             let done = self
                 .child
@@ -465,6 +467,7 @@ fn pump_python_output<R: Read + Send + 'static>(
     reader: Option<R>,
     events: Sender<Event>,
     wake: Arc<dyn Fn() + Send + Sync>,
+    stderr: bool,
 ) {
     let Some(mut reader) = reader else { return };
     let mut buffer = [0; 4096];
@@ -472,9 +475,13 @@ fn pump_python_output<R: Read + Send + 'static>(
         match reader.read(&mut buffer) {
             Ok(0) | Err(_) => break,
             Ok(count) => {
-                let _ = events.send(Event::Output(
-                    String::from_utf8_lossy(&buffer[..count]).into_owned(),
-                ));
+                let text = String::from_utf8_lossy(&buffer[..count]).into_owned();
+                let event = if stderr {
+                    Event::ErrorOutput(text)
+                } else {
+                    Event::Output(text)
+                };
+                let _ = events.send(event);
                 wake();
             }
         }
@@ -582,7 +589,9 @@ mod tests {
         events
             .iter()
             .filter_map(|event| match event {
-                Event::Output(text) | Event::Value(text) => Some(text.as_str()),
+                Event::Output(text) | Event::ErrorOutput(text) | Event::Value(text) => {
+                    Some(text.as_str())
+                }
                 Event::Error { text, .. } => Some(text.as_str()),
                 _ => None,
             })
@@ -723,5 +732,31 @@ mod tests {
         assert!(text.contains("Python"));
         assert_eq!(error_file, file);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn keeps_python_stdout_and_stderr_as_distinct_events() {
+        use std::io::Cursor;
+        use std::sync::mpsc;
+        use std::sync::Arc;
+
+        let (events, receiver) = mpsc::channel();
+        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        super::pump_python_output(
+            Some(Cursor::new(b"normal\n".to_vec())),
+            events.clone(),
+            Arc::clone(&wake),
+            false,
+        );
+        super::pump_python_output(Some(Cursor::new(b"warning\n".to_vec())), events, wake, true);
+
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            Event::Output(text) if text == "normal\n"
+        ));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            Event::ErrorOutput(text) if text == "warning\n"
+        ));
     }
 }
