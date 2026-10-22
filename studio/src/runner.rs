@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Child, Command as ProcessCommand, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -27,6 +28,10 @@ enum Command {
         base_dir: PathBuf,
         file: Option<PathBuf>,
         debug: bool,
+    },
+    Python {
+        file: PathBuf,
+        interpreter: Option<String>,
     },
     Repl {
         code: String,
@@ -76,6 +81,7 @@ pub struct Runner {
     /// Lines of the main program to pause on; changes apply at once, even
     /// while a program runs.
     breakpoints: Arc<Mutex<BTreeSet<usize>>>,
+    child: Arc<Mutex<Option<Child>>>,
     busy: bool,
 }
 
@@ -88,6 +94,7 @@ impl Runner {
         let (resume, resume_receiver) = mpsc::channel();
         let interrupt = Arc::new(AtomicBool::new(false));
         let breakpoints = Arc::new(Mutex::new(BTreeSet::new()));
+        let child = Arc::new(Mutex::new(None));
 
         let worker = Worker {
             events: event_sender,
@@ -95,6 +102,7 @@ impl Runner {
             resume: Arc::new(Mutex::new(resume_receiver)),
             interrupt: Arc::clone(&interrupt),
             breakpoints: Arc::clone(&breakpoints),
+            child: Arc::clone(&child),
             wake: Arc::new(wake),
         };
         thread::Builder::new()
@@ -110,6 +118,7 @@ impl Runner {
             resume,
             interrupt,
             breakpoints,
+            child,
             busy: false,
         }
     }
@@ -127,6 +136,10 @@ impl Runner {
             file,
             debug,
         });
+    }
+
+    pub fn python(&mut self, file: PathBuf, interpreter: Option<String>) {
+        self.start(Command::Python { file, interpreter });
     }
 
     pub fn set_breakpoints(&self, lines: &BTreeSet<usize>) {
@@ -155,6 +168,11 @@ impl Runner {
 
     pub fn stop(&self) {
         self.interrupt.store(true, Ordering::Relaxed);
+        if let Ok(mut child) = self.child.lock() {
+            if let Some(child) = child.as_mut() {
+                let _ = child.kill();
+            }
+        }
     }
 
     /// Events that arrived since the last call.
@@ -176,6 +194,7 @@ struct Worker {
     resume: Arc<Mutex<Receiver<Resume>>>,
     interrupt: Arc<AtomicBool>,
     breakpoints: Arc<Mutex<BTreeSet<usize>>>,
+    child: Arc<Mutex<Option<Child>>>,
     wake: Arc<dyn Fn() + Send + Sync>,
 }
 
@@ -194,6 +213,7 @@ impl Worker {
                     file,
                     debug,
                 } => self.run(&source, base_dir, file, debug),
+                Command::Python { file, interpreter } => self.run_python(file, interpreter),
                 Command::Repl { code, lang } => {
                     if repl.as_ref().is_none_or(|(current, _)| *current != lang) {
                         let mut interpreter =
@@ -231,6 +251,7 @@ impl Worker {
         if let Ok(resume) = self.resume.lock() {
             while resume.try_recv().is_ok() {}
         }
+
         let mut debugger = StudioDebugger {
             mode: Mode::Continue,
             breakpoints: Arc::clone(&self.breakpoints),
@@ -255,6 +276,74 @@ impl Worker {
             if error.message != earth::messages::Message::Interrupted {
                 self.report(&error, lang, file);
             }
+        }
+    }
+
+    fn run_python(&self, file: PathBuf, interpreter: Option<String>) {
+        let candidates = interpreter.into_iter().chain(if cfg!(windows) {
+            vec!["py".to_owned(), "python".to_owned()]
+        } else {
+            vec!["python3".to_owned(), "python".to_owned()]
+        });
+        let mut process = None;
+        let mut attempted = Vec::new();
+        for candidate in candidates {
+            attempted.push(candidate.clone());
+            if let Ok(child) = ProcessCommand::new(&candidate)
+                .arg(&file)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                process = Some(child);
+                break;
+            }
+        }
+        let Some(mut process) = process else {
+            self.send(Event::Error {
+                    text: format!(
+                        "Python yorumlayıcısı bulunamadı. Ayarlar'dan özel bir yol seçin veya https://www.python.org/downloads/ adresinden Python yükleyin. Denenenler: {}",
+                        attempted.join(", ")
+                    ),
+                    line: None,
+                    column: None,
+                    file: Some(file),
+                });
+            return;
+        };
+        let stdout = process.stdout.take();
+        let stderr = process.stderr.take();
+        if let Ok(mut slot) = self.child.lock() {
+            *slot = Some(process);
+        }
+        let events = self.events.clone();
+        let wake = Arc::clone(&self.wake);
+        let out_thread = thread::spawn(move || pump_python_output(stdout, events, wake));
+        let events = self.events.clone();
+        let wake = Arc::clone(&self.wake);
+        let err_thread = thread::spawn(move || pump_python_output(stderr, events, wake));
+        loop {
+            let done = self
+                .child
+                .lock()
+                .ok()
+                .and_then(|mut slot| {
+                    slot.as_mut()
+                        .map(|child| child.try_wait().ok().flatten().is_some())
+                })
+                .unwrap_or(true);
+            if done {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let _ = out_thread.join();
+        let _ = err_thread.join();
+        if let Ok(mut slot) = self.child.lock() {
+            if let Some(child) = slot.as_mut() {
+                let _ = child.wait();
+            }
+            *slot = None;
         }
     }
 
@@ -352,6 +441,26 @@ impl Debugger for StudioDebugger {
                 }
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return false,
+            }
+        }
+    }
+}
+
+fn pump_python_output<R: Read + Send + 'static>(
+    reader: Option<R>,
+    events: Sender<Event>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+) {
+    let Some(mut reader) = reader else { return };
+    let mut buffer = [0; 4096];
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(count) => {
+                let _ = events.send(Event::Output(
+                    String::from_utf8_lossy(&buffer[..count]).into_owned(),
+                ));
+                wake();
             }
         }
     }
