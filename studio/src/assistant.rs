@@ -585,14 +585,30 @@ pub fn system_prompt(ui_lang: Lang, file: Option<OpenFile>, teacher: Option<Leve
         Lang::Tr => "Turkish",
         Lang::En => "English",
     };
-    let mut prompt = REFERENCE.replace("{ui_language}", language);
-    if let Some(level) = teacher {
-        prompt.push_str(&teacher_instructions(level));
+    let is_python = file
+        .as_ref()
+        .is_some_and(|file| file.name.to_ascii_lowercase().ends_with(".py"));
+    let mut prompt = if is_python {
+        format!(
+            "You are a helpful Python programming assistant. Answer in {language}. \
+             Give accurate, runnable Python examples and explain errors clearly."
+        )
+    } else {
+        REFERENCE.replace("{ui_language}", language)
+    };
+    if !is_python {
+        if let Some(level) = teacher {
+            prompt.push_str(&teacher_instructions(level));
+        }
     }
     if let Some(file) = file {
-        let program_lang = match earth::detect_language(file.text) {
-            Lang::Tr => "Turkish",
-            Lang::En => "English",
+        let program_lang = if is_python {
+            "Python"
+        } else {
+            match earth::detect_language(file.text) {
+                Lang::Tr => "Turkish",
+                Lang::En => "English",
+            }
         };
         let mut text = file.text;
         let mut cut = "";
@@ -606,8 +622,9 @@ pub fn system_prompt(ui_lang: Lang, file: Option<OpenFile>, teacher: Option<Leve
         }
         prompt.push_str(&format!(
             "\n# The user's open file: {} (written with {program_lang} keywords; \
-             use them in your code)\n```earth\n{text}{cut}\n```\n",
-            file.name
+             use them in your code)\n```{}\n{text}{cut}\n",
+            file.name,
+            if is_python { "python" } else { "earth" }
         ));
     }
     prompt

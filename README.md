@@ -14,7 +14,8 @@ Earth, **Türkçe ya da İngilizce yazılabilen** bir programlama dilidir. Her
 anahtar kelimenin ve her yerleşik fonksiyonun Türkçe ve İngilizce yazımı
 vardır; ikisi aynı anlama gelir, hatta aynı programda karıştırılabilir. Earth,
 kendi editörü **Earth Studio** ile gelir: dosya gezgini, renkli kod editörü ve
-programın çalıştığı terminal tek pencerede.
+programın çalıştığı terminal tek pencerede. Earth Studio ayrıca Python
+dosyalarını açıp çalıştırabilir.
 
 *Earth is a programming language you can write in Turkish or English: every
 keyword and built-in has both spellings, and Earth answers in the language
@@ -52,6 +53,7 @@ fib(20) = 6765
 - [Neden Earth?](#neden-earth)
 - [Hızlı başlangıç](#hızlı-başlangıç)
 - [Earth Studio](#earth-studio)
+  - [Python dosyaları](#python-dosyaları)
   - [Hesap ve ayarlar](#hesap-ve-ayarlar)
   - [Otomatik tamamlama](#otomatik-tamamlama) · [Canlı hata denetimi](#canlı-hata-denetimi) · [Hata ayıklayıcı](#hata-ayıklayıcı)
   - [Kişiselleştirme](#kişiselleştirme)
@@ -136,6 +138,18 @@ fib(20) = 6765
 | **Hesap ve ayarlar** (sol alt köşe) | **👤 Giriş yap** ile Google ya da GitHub hesabınla giriş, **⚙** ile [ayarlar](#kişiselleştirme). |
 | **Terminal** (editörün altı) | Programın çıktısı burada akar. Program `girdi` ile bir şey sorduğunda cevabı alttaki satıra yazarsın. Program çalışmıyorken aynı satır bir Earth komut satırıdır (REPL). Hata ayıklarken yanında hata ayıklama paneli açılır. |
 | **Durum çubuğu** (en alt) | Solda toplam indirme sayısı ve programın durumu (renkli nokta: Hazır, Çalışıyor, Duraklatıldı, Girdi bekleniyor); sağda varsa sözdizimi hatası, imlecin satır ve sütunu, dosyanın dili ve Studio'nun sürümü. |
+
+### Python dosyaları
+
+Earth Studio'da `.py` dosyalarını klasörden açabilir, düzenleyebilir ve **F5**
+ile çalıştırabilirsiniz. Çıktı ve hata akışı Earth dosyalarında olduğu gibi
+terminalde görünür; Python dosyalarında Earth'e özel canlı sözdizimi denetimi,
+hata ayıklayıcı, REPL ve öğretmen akışı devre dışıdır.
+
+Studio, ayarlarda özel bir yorumlayıcı yolu verilmedikçe Windows'ta önce
+`py`, sonra `python`; diğer sistemlerde `python3`, sonra `python` komutlarını
+arar. Python bulunamazsa terminalde Python indirme bağlantısı ve ayarlar
+sayfasına yönlendirme gösterilir.
 
 ### Klavye kısayolları
 

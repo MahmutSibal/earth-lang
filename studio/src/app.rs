@@ -170,6 +170,12 @@ pub struct StudioApp {
 }
 
 impl StudioApp {
+    fn is_python_active(&self) -> bool {
+        self.documents
+            .get(self.active)
+            .and_then(|document| document.path.as_deref())
+            .is_some_and(files::is_python)
+    }
     pub fn new(context: &eframe::CreationContext<'_>, start: Option<PathBuf>) -> Self {
         let egui_context = context.egui_ctx.clone();
         let update_context = context.egui_ctx.clone();
@@ -394,7 +400,7 @@ impl StudioApp {
             Some(path) => path,
             None => {
                 let mut dialog = rfd::FileDialog::new()
-                    .add_filter(texts.earth_files, &["earth"])
+                    .add_filter(texts.earth_files, &["earth", "py"])
                     .set_file_name("program.earth");
                 if let Some(folder) = &self.folder {
                     dialog = dialog.set_directory(folder);
@@ -499,7 +505,16 @@ impl StudioApp {
         self.write_terminal(format!("▶ {title}\n"), LineKind::Info);
         self.running_program = true;
         self.running_document = Some(self.active);
-        self.runner.run(source, base_dir, file, debug);
+        if file.as_deref().is_some_and(files::is_python) {
+            let interpreter = (!self.settings.python_path.trim().is_empty())
+                .then(|| self.settings.python_path.clone());
+            self.runner.python(
+                file.unwrap_or_else(|| PathBuf::from("program.py")),
+                interpreter,
+            );
+        } else {
+            self.runner.run(source, base_dir, file, debug);
+        }
     }
 
     fn submit_terminal_line(&mut self) {
@@ -656,7 +671,7 @@ impl StudioApp {
             }
             let debug = egui::Button::new(texts.debug_button).min_size(egui::vec2(0.0, 28.0));
             if ui
-                .add_enabled(!busy, debug)
+                .add_enabled(!busy && !self.is_python_active(), debug)
                 .on_hover_text(hint(self, texts.action_debug, Action::Debug))
                 .clicked()
             {
@@ -840,9 +855,11 @@ impl StudioApp {
                 if ui.small_button(texts.clear).clicked() {
                     self.terminal.clear();
                 }
-                if let Some(error) = self.last_error.clone() {
-                    if ui.small_button(texts.assistant_explain_error).clicked() {
-                        self.explain_error(&error);
+                if !self.is_python_active() {
+                    if let Some(error) = self.last_error.clone() {
+                        if ui.small_button(texts.assistant_explain_error).clicked() {
+                            self.explain_error(&error);
+                        }
                     }
                 }
             });
@@ -884,15 +901,18 @@ impl StudioApp {
                     });
 
                 let busy = self.runner.is_busy();
+                let python = self.is_python_active();
                 let (prompt, hint) = if busy && self.running_program {
                     ("›", texts.input_hint)
+                } else if python {
+                    ("python>", texts.python_terminal_hint)
                 } else {
                     ("earth>", texts.repl_hint)
                 };
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(prompt).monospace().color(palette.success));
                     let response = ui.add_enabled(
-                        !busy || self.running_program,
+                        (!busy || self.running_program) && !python,
                         TextEdit::singleline(&mut self.terminal_input)
                             .font(font)
                             .hint_text(hint)
@@ -959,9 +979,13 @@ impl StudioApp {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let document = &self.documents[self.active];
-                let program_lang = match earth::detect_language(&document.text) {
-                    Lang::Tr => "Earth (Türkçe)",
-                    Lang::En => "Earth (English)",
+                let program_lang = if document.path.as_deref().is_some_and(files::is_python) {
+                    "Python"
+                } else {
+                    match earth::detect_language(&document.text) {
+                        Lang::Tr => "Earth (Türkçe)",
+                        Lang::En => "Earth (English)",
+                    }
                 };
                 let version = ui
                     .add(
@@ -1349,7 +1373,8 @@ impl StudioApp {
                 // Like VS Code, Run goes on when paused.
                 Action::Run if paused => self.resume(Resume::Continue),
                 Action::Run => self.run(),
-                Action::Debug => self.start_debugging(),
+                Action::Debug if !self.is_python_active() => self.start_debugging(),
+                Action::Debug => {}
                 Action::Continue => self.resume(Resume::Continue),
                 Action::StepOver => self.resume(Resume::StepOver),
                 Action::StepInto => self.resume(Resume::StepInto),
@@ -1536,6 +1561,8 @@ fn show_nodes(
             None => {
                 let icon = if node.name.ends_with(".earth") {
                     "🌍"
+                } else if node.name.to_ascii_lowercase().ends_with(".py") {
+                    "🐍"
                 } else {
                     "📄"
                 };

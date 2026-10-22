@@ -135,6 +135,20 @@ impl StudioApp {
                 );
                 ui.end_row();
 
+                ui.label(texts.python_path);
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.settings.python_path)
+                            .hint_text(texts.python_path_hint)
+                            .desired_width(260.0),
+                    );
+                    if ui.button(texts.python_download).clicked() {
+                        ui.ctx()
+                            .open_url(egui::OpenUrl::new_tab("https://www.python.org/downloads/"));
+                    }
+                });
+                ui.end_row();
+
                 ui.label(texts.settings_ui_scale);
                 let mut percent = (self.settings.ui_scale * 100.0).round();
                 let slider = egui::Slider::new(
