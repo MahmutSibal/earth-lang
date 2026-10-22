@@ -39,6 +39,7 @@ pub enum Keyword {
     Let,
     If,
     Else,
+    ElseIf,
     While,
     For,
     In,
@@ -64,6 +65,10 @@ const KEYWORDS: &[(Keyword, Spellings)] = &[
     (Keyword::Let, [&["değişken", "degisken"], &["let"]]),
     (Keyword::If, [&["eğer", "eger"], &["if"]]),
     (Keyword::Else, [&["değilse", "degilse"], &["else"]]),
+    (
+        Keyword::ElseIf,
+        [&["değilse_eğer", "degilse_eger"], &["elif"]],
+    ),
     (Keyword::While, [&["iken"], &["while"]]),
     (Keyword::For, [&["her"], &["for"]]),
     (Keyword::In, [&["içinde", "icinde"], &["in"]]),
@@ -217,6 +222,8 @@ mod tests {
         assert_eq!(keyword("eger"), Some(Keyword::If));
         assert_eq!(keyword("if"), Some(Keyword::If));
         assert_eq!(keyword("x"), None);
+        assert_eq!(keyword("elif"), Some(Keyword::ElseIf));
+        assert_eq!(keyword("değilse_eğer"), Some(Keyword::ElseIf));
     }
 
     #[test]
