@@ -802,13 +802,15 @@ impl<'io> Interpreter<'io> {
             | AssignOp::Subtract
             | AssignOp::Multiply
             | AssignOp::Divide
-            | AssignOp::Remainder => {
+            | AssignOp::Remainder
+            | AssignOp::Power => {
                 let binary = match op {
                     AssignOp::Add => BinaryOp::Add,
                     AssignOp::Subtract => BinaryOp::Subtract,
                     AssignOp::Multiply => BinaryOp::Multiply,
                     AssignOp::Divide => BinaryOp::Divide,
                     AssignOp::Remainder => BinaryOp::Remainder,
+                    AssignOp::Power => BinaryOp::Power,
                     AssignOp::Set => unreachable!(),
                 };
                 self.binary(binary, current, value, position)

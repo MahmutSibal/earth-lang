@@ -461,7 +461,7 @@ Bitti
 
 Bir değişkeni ilk kez **`değişken`** (`let`) ile tanımlarsın; sonra `=` ile
 yeni değer verebilirsin. Sık kullanılan işlemleri kısa yazmak için `+=`, `-=`,
-`*=`, `/=` ve `%=` bileşik atamalarını da kullanabilirsin. Değişken adları
+`*=`, `/=`, `%=` ve `**=` bileşik atamalarını da kullanabilirsin. Değişken adları
 harf ya da `_` ile başlar; Türkçe harfler kullanılabilir.
 
 ```earth
@@ -469,12 +469,13 @@ değişken sayaç = 0
 sayaç = sayaç + 1
 sayaç = sayaç * 10
 sayaç += 2
+sayaç **= 2
 değişken öğrenci_adı = "Ayşe"
 yaz(öğrenci_adı, sayaç)
 ```
 
 ```text
-Ayşe 12
+Ayşe 144
 ```
 
 Tanımlanmamış bir değişkene değer vermek hatadır; Earth bunu yazım
@@ -542,7 +543,7 @@ yaz(sayı("42") + 1, sayı("kırk iki"), metin(3.5) + "!")
 | `+` `-` `*` `/` | toplama, çıkarma, çarpma, bölme | `7 / 2` | `3.5` |
 | `%` | bölümden kalan | `7 % 3` | `1` |
 | `**` | üs alma | `2 ** 3` | `8` |
-| `+=` `-=` `*=` `/=` `%=` | bileşik atama | `sayaç += 1` | sayaç değişir |
+| `+=` `-=` `*=` `/=` `%=` `**=` | bileşik atama | `sayaç += 1` | sayaç değişir |
 | `-x` | eksi | `-(2 + 3)` | `-5` |
 | `==` `!=` | eşit mi, farklı mı | `2 == 2.0` | `doğru` |
 | `<` `<=` `>` `>=` | karşılaştırma (sayılar ve metinler) | `"elma" < "armut"` | `yanlış` |

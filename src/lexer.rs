@@ -24,6 +24,7 @@ pub enum TokenKind {
     Slash,
     Percent,
     DoubleStar,
+    DoubleStarEqual,
     Equal,
     PlusEqual,
     MinusEqual,
@@ -65,6 +66,7 @@ impl TokenKind {
             TokenKind::Slash => "/",
             TokenKind::Percent => "%",
             TokenKind::DoubleStar => "**",
+            TokenKind::DoubleStarEqual => "**=",
             TokenKind::Equal => "=",
             TokenKind::PlusEqual => "+=",
             TokenKind::MinusEqual => "-=",
@@ -195,9 +197,19 @@ impl Lexer {
             '+' => TokenKind::Plus,
             '-' if self.eat('=') => TokenKind::MinusEqual,
             '-' => TokenKind::Minus,
-            '*' if self.eat('=') => TokenKind::StarEqual,
-            '*' if self.eat('*') => TokenKind::DoubleStar,
-            '*' => TokenKind::Star,
+            '*' => {
+                if self.eat('=') {
+                    TokenKind::StarEqual
+                } else if self.eat('*') {
+                    if self.eat('=') {
+                        TokenKind::DoubleStarEqual
+                    } else {
+                        TokenKind::DoubleStar
+                    }
+                } else {
+                    TokenKind::Star
+                }
+            }
             '/' if self.eat('=') => TokenKind::SlashEqual,
             '/' => TokenKind::Slash,
             '%' if self.eat('=') => TokenKind::PercentEqual,
@@ -366,6 +378,19 @@ mod tests {
                 TokenKind::GreaterEqual,
                 TokenKind::Number(2.5),
                 TokenKind::Newline,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_power_assignment() {
+        assert_eq!(
+            kinds("x **= 2"),
+            vec![
+                TokenKind::Identifier("x".to_owned()),
+                TokenKind::DoubleStarEqual,
+                TokenKind::Number(2.0),
                 TokenKind::Eof,
             ]
         );

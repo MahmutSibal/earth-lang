@@ -32,6 +32,7 @@ pub enum AssignOp {
     Multiply,
     Divide,
     Remainder,
+    Power,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
