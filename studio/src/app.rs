@@ -510,6 +510,7 @@ impl StudioApp {
                 .then(|| self.settings.python_path.clone());
             self.runner.python(
                 file.unwrap_or_else(|| PathBuf::from("program.py")),
+                base_dir,
                 interpreter,
             );
         } else {

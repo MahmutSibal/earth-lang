@@ -31,6 +31,7 @@ enum Command {
     },
     Python {
         file: PathBuf,
+        base_dir: PathBuf,
         interpreter: Option<String>,
     },
     Repl {
@@ -138,8 +139,12 @@ impl Runner {
         });
     }
 
-    pub fn python(&mut self, file: PathBuf, interpreter: Option<String>) {
-        self.start(Command::Python { file, interpreter });
+    pub fn python(&mut self, file: PathBuf, base_dir: PathBuf, interpreter: Option<String>) {
+        self.start(Command::Python {
+            file,
+            base_dir,
+            interpreter,
+        });
     }
 
     pub fn set_breakpoints(&self, lines: &BTreeSet<usize>) {
@@ -213,7 +218,11 @@ impl Worker {
                     file,
                     debug,
                 } => self.run(&source, base_dir, file, debug),
-                Command::Python { file, interpreter } => self.run_python(file, interpreter),
+                Command::Python {
+                    file,
+                    base_dir,
+                    interpreter,
+                } => self.run_python(file, base_dir, interpreter),
                 Command::Repl { code, lang } => {
                     if repl.as_ref().is_none_or(|(current, _)| *current != lang) {
                         let mut interpreter =
@@ -279,18 +288,24 @@ impl Worker {
         }
     }
 
-    fn run_python(&self, file: PathBuf, interpreter: Option<String>) {
-        let candidates = interpreter.into_iter().chain(if cfg!(windows) {
-            vec!["py".to_owned(), "python".to_owned()]
-        } else {
-            vec!["python3".to_owned(), "python".to_owned()]
-        });
+    fn run_python(&self, file: PathBuf, base_dir: PathBuf, interpreter: Option<String>) {
+        let candidates = interpreter.map_or_else(
+            || {
+                if cfg!(windows) {
+                    vec!["py".to_owned(), "python".to_owned()]
+                } else {
+                    vec!["python3".to_owned(), "python".to_owned()]
+                }
+            },
+            |path| vec![path],
+        );
         let mut process = None;
         let mut attempted = Vec::new();
         for candidate in candidates {
             attempted.push(candidate.clone());
             if let Ok(child) = ProcessCommand::new(&candidate)
                 .arg(&file)
+                .current_dir(&base_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
@@ -679,5 +694,34 @@ mod tests {
         runner.repl("x + 2".to_owned(), earth::Lang::Tr);
         let events = wait_until_finished(&mut runner);
         assert_eq!(output(&events), "42");
+    }
+
+    #[test]
+    fn reports_when_python_interpreter_is_missing() {
+        let root = std::env::temp_dir().join(format!("earth-studio-python-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("main.py");
+        std::fs::write(&file, "print('unreachable')").unwrap();
+
+        let mut runner = Runner::new(|| {});
+        runner.python(
+            file.clone(),
+            root.clone(),
+            Some(root.join("missing-python").display().to_string()),
+        );
+        let events = wait_until_finished(&mut runner);
+        let message = events.iter().find_map(|event| match event {
+            Event::Error {
+                text,
+                file: Some(error_file),
+                ..
+            } => Some((text.clone(), error_file.clone())),
+            _ => None,
+        });
+        assert!(message.is_some());
+        let (text, error_file) = message.unwrap();
+        assert!(text.contains("Python"));
+        assert_eq!(error_file, file);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
